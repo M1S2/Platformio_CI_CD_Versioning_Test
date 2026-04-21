@@ -1,0 +1,57 @@
+html 
+{
+	font-family: Arial; 
+	display: inline-block; 
+	text-align: center;
+}
+
+p 
+{  
+	font-size: 1.2rem;
+}
+
+body 
+{  
+	margin: 0;
+	background-color: var(--background-color);
+}
+
+#Heading
+{
+	position: sticky;
+	top: 0;
+	font-size: 40px;
+	background-color: var(--accent1-color);
+	color: var(--accent-text-color);
+	z-index: 10;	/* use a high value here. Otherwise the charts are displayed on top */
+}
+
+#SubHeading
+{
+	font-size: 30px;
+	background-color: var(--accent1-color);
+	color: var(--accent-text-color);
+	z-index: 10;	/* use a high value here. Otherwise the charts are displayed on top */
+}
+
+/* ----------------------------------------------------------------------------------------- */
+
+:root 
+{
+	--background-color: #F7F8F8;
+	--text-color: #121416d8; 			/*rgba*/ 
+	--accent1-color: #228b22;
+	--accent-text-color: #F7F8F8;
+}
+
+/* Styles for users who prefer dark mode at the OS level */
+@media (prefers-color-scheme: dark)
+{
+	:root
+	{
+		--background-color: #212a2e;
+		--text-color: #F7F8F8;
+		--accent1-color: #228b22;
+		--accent-text-color: #F7F8F8;
+	}
+}
