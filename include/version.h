@@ -1,1 +1,1 @@
-#define FW_VERSION     "NO_RELEASE"
+#define FW_VERSION     "@VERSION@"

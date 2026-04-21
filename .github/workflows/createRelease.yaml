@@ -1,0 +1,56 @@
+name: Release Firmware
+
+on:
+  push:
+    tags:
+      - 'SW_v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#SW_v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Patch version into code
+        run: |
+          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" include/version.h  
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build
+        run: pio run
+
+      - name: Build LittleFS image
+        run: pio run --target buildfs
+
+      - name: Rename binaries
+        run: |
+          cp .pio/build/esp12e/firmware.bin test_fw_${{ steps.version.outputs.version }}.bin
+          cp .pio/build/esp12e/littlefs.bin test_fs_${{ steps.version.outputs.version }}.bin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Firmware ${{ steps.version.outputs.version }}"
+          files: |
+            test_fw_${{ steps.version.outputs.version }}.bin
+            test_fs_${{ steps.version.outputs.version }}.bin
