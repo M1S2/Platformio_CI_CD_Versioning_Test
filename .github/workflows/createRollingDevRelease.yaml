@@ -1,0 +1,70 @@
+name: Dev Firmware
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+
+jobs:
+  build-dev:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "version=dev-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build
+        run: pio run
+
+      - name: Build LittleFS image
+        run: pio run --target buildfs
+
+      - name: Prepare files
+        run: |
+          mkdir -p dist/firmware/dev
+
+          cp .pio/build/esp12e/firmware.bin dist/firmware/dev/test_fw.bin
+          cp .pio/build/esp12e/littlefs.bin dist/firmware/dev/test_fs.bin
+
+      - name: Generate SHA256
+        run: |
+          sha256sum dist/firmware/dev/test_fw.bin > dist/firmware/dev/test_fw.sha256
+          sha256sum dist/firmware/dev/test_fs.bin > dist/firmware/dev/test_fs.sha256
+
+      - name: Create manifest
+        run: |
+          cat <<EOF > dist/firmware/dev/manifest.json
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "test_fw": "test_fw.bin",
+            "test_fs": "test_fs.bin",
+            "test_fw_sha256": "test_fw.sha256",
+            "test_fs_sha256": "test_fs.sha256"
+          }
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          allow_empty_commit: false
+          force_orphan: true
+          publish_dir: ./dist
+          publish_branch: gh-pages
