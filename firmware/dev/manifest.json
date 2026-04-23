@@ -1,0 +1,7 @@
+{
+  "version": "dev-SW_v1.1.0-p4-611020b",
+  "part1_fw": "part1_fw.bin",
+  "part1_fs": "part1_fs.bin",
+  "part1_fw_sha256": "part1_fw.sha256",
+  "part1_fs_sha256": "part1_fs.sha256"
+}
