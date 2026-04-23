@@ -46,6 +46,11 @@ jobs:
           cp .pio/build/esp12e/firmware.bin test_fw_${{ steps.version.outputs.version }}.bin
           cp .pio/build/esp12e/littlefs.bin test_fs_${{ steps.version.outputs.version }}.bin
 
+      - name: Generate SHA256
+        run: |
+          sha256sum test_fw_${{ steps.version.outputs.version }}.bin > test_fw_${{ steps.version.outputs.version }}.sha256
+          sha256sum test_fs_${{ steps.version.outputs.version }}.bin > test_fs_${{ steps.version.outputs.version }}.sha256
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -54,3 +59,5 @@ jobs:
           files: |
             test_fw_${{ steps.version.outputs.version }}.bin
             test_fs_${{ steps.version.outputs.version }}.bin
+            test_fw_${{ steps.version.outputs.version }}.sha256
+            test_fs_${{ steps.version.outputs.version }}.sha256
