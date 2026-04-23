@@ -33,6 +33,10 @@ jobs:
 
           echo "version=dev-${LAST_TAG}-p${DISTANCE}-${SHORT_SHA}" >> $GITHUB_OUTPUT
 
+      - name: Patch version into code
+        run: |
+          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" include/version.h
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
