@@ -15,7 +15,7 @@ void main_initWebserverEndpoints()
     server.on("/test", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         DynamicJsonDocument doc(256);
-        doc["text"] = "Hello World";
+        doc["text"] = "Hello World Text";
         doc["version"] = FW_VERSION;
         String response;
         serializeJson(doc, response);
