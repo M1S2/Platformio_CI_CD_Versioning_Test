@@ -16,6 +16,16 @@ body
 	background-color: var(--background-color);
 }
 
+div 
+{  
+	color: var(--text-color);
+}
+
+h1, h2, h3, h4, h5, h6
+{  
+	color: var(--text-color);
+}
+
 #Heading
 {
 	position: sticky;
