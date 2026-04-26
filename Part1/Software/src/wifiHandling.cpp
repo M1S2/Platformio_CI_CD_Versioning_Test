@@ -4,6 +4,7 @@
 #include "otaUpdate.h"
 #include "config.h"
 #include "main.h"
+#include "updateHandling.h"
 
 AsyncWebServer server(80);
 DNSServer dns;
@@ -69,6 +70,7 @@ void wifiHandling_onConnected()
 
     wifiHandling_initWebserverFiles();
     main_initWebserverEndpoints();
+    updateHandling_initWebserverEndpoints();
     //otaUpdate_init(&server);
 
     server.begin();

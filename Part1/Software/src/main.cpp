@@ -8,6 +8,7 @@
 #include "wifiHandling.h"
 #include "otaUpdate.h"
 #include "version.h"
+#include "updateHandling.h"
 
 void main_initWebserverEndpoints()
 {
@@ -62,5 +63,5 @@ void setup()
 void loop()
 {
     wifiHandling_loop();
-    //otaUpdate_loop();
+    updateHandling_loop();
 }

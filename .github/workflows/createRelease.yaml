@@ -53,12 +53,25 @@ jobs:
           sha256sum part1_fw_${{ steps.version.outputs.version }}.bin > part1_fw_${{ steps.version.outputs.version }}.sha256
           sha256sum part1_fs_${{ steps.version.outputs.version }}.bin > part1_fs_${{ steps.version.outputs.version }}.sha256
 
+      - name: Create manifest
+        run: |
+          cat <<EOF > manifest.json
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "part1_fw": "part1_fw_${{ steps.version.outputs.version }}.bin",
+            "part1_fs": "part1_fs_${{ steps.version.outputs.version }}.bin",
+            "part1_fw_sha256": "part1_fw_${{ steps.version.outputs.version }}.sha256",
+            "part1_fs_sha256": "part1_fs_${{ steps.version.outputs.version }}.sha256"
+          }
+          EOF
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "Firmware ${{ steps.version.outputs.version }}"
           files: |
+            manifest.json
             part1_fw_${{ steps.version.outputs.version }}.bin
             part1_fs_${{ steps.version.outputs.version }}.bin
             part1_fw_${{ steps.version.outputs.version }}.sha256
