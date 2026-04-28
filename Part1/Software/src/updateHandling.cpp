@@ -6,92 +6,52 @@
 
 UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;
 
-const char* manifestStable = "https://api.github.com/repos/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest";
+const char* stableBaseUrl = "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/";
 const char* devBaseUrl = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/";
-const char* manifestDev = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/manifest.json";
+const char* manifestFilename = "manifest.json";
+
+/*
+Stable Manifest Format:
+{
+  "version": "3.0.0",
+  "part1_fw": "part1_fw_3.0.0.bin",
+  "part1_fs": "part1_fs_3.0.0.bin",
+  "part1_fw_sha256": "part1_fw_3.0.0.sha256",
+  "part1_fs_sha256": "part1_fs_3.0.0.sha256"
+}
+
+Dev Manifest Format:
+{
+  "version": "dev-SW_v2.0.0-p2-856538c",
+  "part1_fw": "part1_fw.bin",
+  "part1_fs": "part1_fs.bin",
+  "part1_fw_sha256": "part1_fw.sha256",
+  "part1_fs_sha256": "part1_fs.sha256"
+}
+*/
 
 update_info_t updateInfo;
 bool fetchNewestVersionInfos = false;
 
 /**********************************************************************/
 
-bool updateHandling_fetchStableVersion(update_info_t &info)
+bool updateHandling_fetchVersion(update_info_t &info)
 {
+    info.valid = false;
+    const char* baseUrl = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
+    String manifestUrl = String(baseUrl) + manifestFilename;
+
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("Checking for %s update...\n", (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
+    #endif
+
     WiFiClientSecure client;
     client.setInsecure(); // TODO: remove this later...
 
     HTTPClient http;
     http.setTimeout(10000); // 10 Seconds
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.begin(client, manifestStable);
-    http.addHeader("User-Agent", "ESP8266");
-    http.addHeader("Accept", "application/vnd.github+json");    
-
-    int httpCode = http.GET();
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("HTTP Code: %d\n", httpCode);
-        if (httpCode <= 0)
-        {
-            Serial.printf("HTTP error: %s\n", http.errorToString(httpCode).c_str());
-        }
-    #endif
-
-    if (httpCode != 200)
-    {
-        http.end();
-        return false;
-    }
-
-    /*String payload = http.getString();
-    #ifdef DEBUG_OUTPUT
-        Serial.println("Received manifest:");
-        Serial.println(payload);
-    #endif
-    http.end();
-    DynamicJsonDocument doc(2048);
-    deserializeJson(doc, payload);
-    */
-
-    DynamicJsonDocument doc(32768);
-    DeserializationError err = deserializeJson(doc, http.getStream());
-    #ifdef DEBUG_OUTPUT
-        Serial.print("Deserialization error: ");
-        Serial.println(err.c_str());
-    #endif
-    http.end();
-    
-    String tag = doc["tag_name"].as<String>(); // SW_v1.2.3
-    info.version = tag;
-
-    info.url_fw = "";
-    info.url_fs = "";
-    // Search binary
-    for (JsonObject asset : doc["assets"].as<JsonArray>())
-    {
-        String name = asset["name"].as<String>();
-        if (name.indexOf("part1_fw") >= 0)
-        {
-            info.url_fw = asset["browser_download_url"].as<String>();
-            info.valid = true;
-        }
-        else if (name.indexOf("part1_fs") >= 0)
-        {
-            info.url_fs = asset["browser_download_url"].as<String>();
-            // valid isn't set here because the filesystem update is optional, so the version info is also valid if only the firmware update is available
-        }
-    }
-
-    return info.valid;
-}
-
-bool updateHandling_fetchDevVersion(update_info_t &info)
-{
-    WiFiClientSecure client;
-    client.setInsecure(); // TODO: remove this later...
-
-    HTTPClient http;
-    http.setTimeout(10000); // 10 Seconds
-    http.begin(client, manifestDev);
+    http.begin(client, manifestUrl.c_str());
     int httpCode = http.GET();
     #ifdef DEBUG_OUTPUT
         Serial.printf("HTTP Code: %d\n", httpCode);
@@ -122,29 +82,13 @@ bool updateHandling_fetchDevVersion(update_info_t &info)
     }
 
     info.version = doc["version"].as<String>();
-    info.url_fw = String(devBaseUrl) + doc["part1_fw"].as<String>();
-    info.url_fs = String(devBaseUrl) + doc["part1_fs"].as<String>();
+    info.url_fw = String(baseUrl) + doc["part1_fw"].as<String>();
+    info.url_fs = String(baseUrl) + doc["part1_fs"].as<String>();
+    info.url_fw_sha256 = String(baseUrl) + doc["part1_fw_sha256"].as<String>();
+    info.url_fs_sha256 = String(baseUrl) + doc["part1_fs_sha256"].as<String>();
     info.valid = true;
 
     return info.valid;
-}
-
-bool updateHandling_fetchVersion(update_info_t &info)
-{
-    if (currentUpdateChannel == UPDATE_CHANNEL_STABLE)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("Checking for stable update...");
-        #endif
-        return updateHandling_fetchStableVersion(info);
-    }
-    else
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("Checking for dev update...");
-        #endif
-        return updateHandling_fetchDevVersion(info);
-    }
 }
 
 /**********************************************************************/
@@ -175,7 +119,7 @@ void updateHandling_initWebserverEndpoints()
         request->send(200, "text/plain", "Channel set to stable");
     });
 
-    server.on("/update/fetch", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/start_fetch", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         updateHandling_startFetchingNewestVersionInfos();
         request->send(200, "text/plain", "Fetching...");
@@ -183,13 +127,15 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/get_info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        DynamicJsonDocument doc(1024);
+        DynamicJsonDocument doc(2048);
         doc["channel"] = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev";
         doc["isFetching"] = fetchNewestVersionInfos;
         doc["available"] = updateInfo.valid;
         doc["version"] = updateInfo.version;
         doc["url_fw"] = updateInfo.url_fw;
         doc["url_fs"] = updateInfo.url_fs;
+        doc["url_fw_sha256"] = updateInfo.url_fw_sha256;
+        doc["url_fs_sha256"] = updateInfo.url_fs_sha256;
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
