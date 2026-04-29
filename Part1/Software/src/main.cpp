@@ -6,7 +6,6 @@
 #include "main.h"
 #include "config.h"
 #include "wifiHandling.h"
-#include "otaUpdate.h"
 #include "version.h"
 #include "updateHandling.h"
 

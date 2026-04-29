@@ -1,7 +1,7 @@
 #include <Schedule.h>
 #include <ESPAsyncWiFiManager.h>
+#include <LittleFS.h>
 #include "wifiHandling.h"
-#include "otaUpdate.h"
 #include "config.h"
 #include "main.h"
 #include "updateHandling.h"
@@ -71,7 +71,6 @@ void wifiHandling_onConnected()
     wifiHandling_initWebserverFiles();
     main_initWebserverEndpoints();
     updateHandling_initWebserverEndpoints();
-    //otaUpdate_init(&server);
 
     server.begin();
 

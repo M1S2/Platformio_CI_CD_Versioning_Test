@@ -48,10 +48,12 @@ jobs:
           cp Part1/Software/.pio/build/esp12e/firmware.bin part1_fw_${{ steps.version.outputs.version }}.bin
           cp Part1/Software/.pio/build/esp12e/littlefs.bin part1_fs_${{ steps.version.outputs.version }}.bin
 
-      - name: Generate SHA256
+      - name: Generate MD5 checksums
         run: |
-          sha256sum part1_fw_${{ steps.version.outputs.version }}.bin > part1_fw_${{ steps.version.outputs.version }}.sha256
-          sha256sum part1_fs_${{ steps.version.outputs.version }}.bin > part1_fs_${{ steps.version.outputs.version }}.sha256
+          PART1_FW_MD5=$(md5sum part1_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          PART1_FS_MD5=$(md5sum part1_fs_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          echo "PART1_FW_MD5=$PART1_FW_MD5" >> $GITHUB_ENV
+          echo "PART1_FS_MD5=$PART1_FS_MD5" >> $GITHUB_ENV
 
       - name: Create manifest
         run: |
@@ -60,8 +62,8 @@ jobs:
             "version": "${{ steps.version.outputs.version }}",
             "part1_fw": "part1_fw_${{ steps.version.outputs.version }}.bin",
             "part1_fs": "part1_fs_${{ steps.version.outputs.version }}.bin",
-            "part1_fw_sha256": "part1_fw_${{ steps.version.outputs.version }}.sha256",
-            "part1_fs_sha256": "part1_fs_${{ steps.version.outputs.version }}.sha256"
+            "part1_fw_md5": "${PART1_FW_MD5}",
+            "part1_fs_md5": "${PART1_FS_MD5}"
           }
           EOF
 
@@ -74,5 +76,3 @@ jobs:
             manifest.json
             part1_fw_${{ steps.version.outputs.version }}.bin
             part1_fs_${{ steps.version.outputs.version }}.bin
-            part1_fw_${{ steps.version.outputs.version }}.sha256
-            part1_fs_${{ steps.version.outputs.version }}.sha256
