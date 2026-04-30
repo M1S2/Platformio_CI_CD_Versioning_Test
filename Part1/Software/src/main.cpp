@@ -6,6 +6,7 @@
 #include "main.h"
 #include "config.h"
 #include "wifiHandling.h"
+#include "timeHandling.h"
 #include "version.h"
 #include "updateHandling.h"
 
@@ -52,7 +53,10 @@ void setup()
         return;
     }
 
+    timeHandling_init();
     wifiHandling_init();
+    delay(1000);
+    timeHandling_printNowSerial();
 
     digitalWrite(LED_BUILTIN, LOW);            // Turn on LED
 }

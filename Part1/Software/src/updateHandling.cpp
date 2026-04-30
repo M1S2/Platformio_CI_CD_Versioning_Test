@@ -4,6 +4,8 @@
 #include <ArduinoJson.h>
 #include "updateHandling.h"
 #include "wifiHandling.h"
+#include "timeHandling.h"
+#include "certs.h"
 
 UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;
 
@@ -31,6 +33,9 @@ Dev Manifest Format:
 }
 */
 
+// Create a list of certificates with the server certificate
+X509List cert(ROOT_CA_CERT);
+
 update_info_t updateInfo_Part1;
 bool fetchNewestVersionInfos = false;
 bool isUpdating = false;
@@ -40,6 +45,14 @@ bool currentlyUpdatingFs = false;
 
 bool updateHandling_fetchVersion(update_info_t &info, String componentName)
 {
+    if(isTimeValid == false)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+        #endif
+        return false;
+    }
+
     info.componentName = componentName;
     info.valid = false;
     const char* baseUrl = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
@@ -50,7 +63,7 @@ bool updateHandling_fetchVersion(update_info_t &info, String componentName)
     #endif
 
     WiFiClientSecure client;
-    client.setInsecure(); // TODO: remove this later...
+    client.setTrustAnchors(&cert);
 
     HTTPClient http;
     http.setTimeout(10000); // 10 Seconds
@@ -105,14 +118,28 @@ bool updateHandling_fetchVersion(update_info_t &info, String componentName)
 
 bool updateHandling_performUpdate(update_info_t &info)
 {
-    if (!info.valid) return false;
+    if (!info.valid)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("No valid update info available");
+        #endif
+        return false;
+    }
+
+    if(isTimeValid == false)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+        #endif
+        return false;
+    }
 
     #ifdef DEBUG_OUTPUT
         Serial.printf("Performing update for component %s to version %s\n", info.componentName.c_str(), info.version.c_str());
     #endif
 
     WiFiClientSecure client;
-    client.setInsecure(); // TODO: remove this later...
+    client.setTrustAnchors(&cert);
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
