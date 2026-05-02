@@ -36,6 +36,7 @@ jobs:
       - name: Patch version into code
         run: |
           sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Part1/Software/include/version.h
+          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Part2/Software/include/version.h
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -53,19 +54,26 @@ jobs:
         working-directory: Part1/Software
         run: pio run --target buildfs
 
-      - name: Prepare files for Part1
+      - name: Build Part2
+        working-directory: Part2/Software
+        run: pio run
+
+      - name: Prepare files
         run: |
           mkdir -p dist/firmware/dev
 
           cp Part1/Software/.pio/build/esp12e/firmware.bin dist/firmware/dev/part1_fw.bin
           cp Part1/Software/.pio/build/esp12e/littlefs.bin dist/firmware/dev/part1_fs.bin
+          cp Part2/Software/.pio/build/esp12e/firmware.bin dist/firmware/dev/part2_fw.bin
 
       - name: Generate MD5 checksums
         run: |
           PART1_FW_MD5=$(md5sum dist/firmware/dev/part1_fw.bin | awk '{print $1}')
           PART1_FS_MD5=$(md5sum dist/firmware/dev/part1_fs.bin | awk '{print $1}')
+          PART2_FW_MD5=$(md5sum dist/firmware/dev/part2_fw.bin | awk '{print $1}')
           echo "PART1_FW_MD5=$PART1_FW_MD5" >> $GITHUB_ENV
           echo "PART1_FS_MD5=$PART1_FS_MD5" >> $GITHUB_ENV
+          echo "PART2_FW_MD5=$PART2_FW_MD5" >> $GITHUB_ENV
 
       - name: Create manifest
         run: |
@@ -75,7 +83,9 @@ jobs:
             "part1_fw": "part1_fw.bin",
             "part1_fs": "part1_fs.bin",
             "part1_fw_md5": "${PART1_FW_MD5}",
-            "part1_fs_md5": "${PART1_FS_MD5}"
+            "part1_fs_md5": "${PART1_FS_MD5}",
+            "part2_fw": "part2_fw.bin",
+            "part2_fw_md5": "${PART2_FW_MD5}"
           }
           EOF
 
