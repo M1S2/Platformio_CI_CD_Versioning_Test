@@ -1,0 +1,9 @@
+{
+  "version": "dev-SW_v4.0.0-p1-048297c",
+  "part1_fw": "part1_fw.bin",
+  "part1_fs": "part1_fs.bin",
+  "part1_fw_md5": "99730b8de14c0349ca265d64e4f03fcc",
+  "part1_fs_md5": "31815d8342f9e8cd43c79ce989977559",
+  "part2_fw": "part2_fw.bin",
+  "part2_fw_md5": "acc06eb2842d7259b2abdfd68d280fb0"
+}
