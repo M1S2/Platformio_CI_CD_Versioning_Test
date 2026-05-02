@@ -10,6 +10,9 @@ enum UpdateChannel
     UPDATE_CHANNEL_DEV
 };
 
+#define UPDATE_COMPONENT_PART1 "part1"
+#define UPDATE_COMPONENT_PART2 "part2"
+
 typedef struct update_info
 {
     String componentName;   // Name of the component (e.g. "part1")

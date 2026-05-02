@@ -20,7 +20,9 @@ Stable Manifest Format:
   "part1_fw": "part1_fw_3.0.0.bin",
   "part1_fs": "part1_fs_3.0.0.bin",
   "part1_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698"
+  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698",
+  "part2_fw": "part2_fw.bin",
+  "part2_fw_md5": "50bff09cec367445d75cee900608b86d"
 }
 
 Dev Manifest Format:
@@ -29,7 +31,9 @@ Dev Manifest Format:
   "part1_fw": "part1_fw.bin",
   "part1_fs": "part1_fs.bin",
   "part1_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698"
+  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698",
+  "part2_fw": "part2_fw.bin",
+  "part2_fw_md5": "50bff09cec367445d75cee900608b86d"
 }
 */
 
@@ -37,13 +41,14 @@ Dev Manifest Format:
 X509List cert(ROOT_CA_CERT);
 
 update_info_t updateInfo_Part1;
+update_info_t updateInfo_Part2;
 bool fetchNewestVersionInfos = false;
 bool isUpdating = false;
 bool currentlyUpdatingFs = false;
 
 /**********************************************************************/
 
-bool updateHandling_fetchVersion(update_info_t &info, String componentName)
+bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentNames[], size_t count)
 {
     if(isTimeValid == false)
     {
@@ -53,8 +58,11 @@ bool updateHandling_fetchVersion(update_info_t &info, String componentName)
         return false;
     }
 
-    info.componentName = componentName;
-    info.valid = false;
+    if (count == 0 || infos == nullptr || componentNames == nullptr)
+    {
+        return false;
+    }
+
     const char* baseUrl = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
     String manifestUrl = String(baseUrl) + manifestFilename;
 
@@ -98,20 +106,48 @@ bool updateHandling_fetchVersion(update_info_t &info, String componentName)
         return false;
     }
 
-    String keyFw = componentName + "_fw";
-    String keyFs = componentName + "_fs";
-    String keyFwMd5 = componentName + "_fw_md5";
-    String keyFsMd5 = componentName + "_fs_md5";
+    bool anyValid = false;
+    for (size_t i = 0; i < count; ++i)
+    {
+        update_info_t &info = *infos[i];
+        const String componentName = String(componentNames[i]);
+        info.componentName = componentName;
+        info.valid = false;
+        info.version = "";
+        info.url_fw = "";
+        info.url_fs = "";
+        info.fw_md5 = "";
+        info.fs_md5 = "";
+        info.has_fs_update = false;
+        info.updateProgress_fw = 0.0f;
+        info.updateProgress_fs = 0.0f;
 
-    info.version = doc["version"].as<String>();
-    info.url_fw = String(baseUrl) + doc[keyFw].as<String>();
-    info.url_fs = String(baseUrl) + doc[keyFs].as<String>();
-    info.fw_md5 = doc[keyFwMd5].as<String>();
-    info.fs_md5 = doc[keyFsMd5].as<String>();
-    info.has_fs_update = (info.url_fs != "");
-    info.valid = true;
+        String keyVersion = "version";
+        String keyFw = componentName + "_fw";
+        String keyFs = componentName + "_fs";
+        String keyFwMd5 = componentName + "_fw_md5";
+        String keyFsMd5 = componentName + "_fs_md5";
 
-    return info.valid;
+        if(doc.containsKey(keyVersion))
+        {
+            info.version = doc[keyVersion].as<String>();
+        }
+        if (doc.containsKey(keyFw) && doc.containsKey(keyFwMd5))
+        {
+            info.url_fw = String(baseUrl) + doc[keyFw].as<String>();
+            info.fw_md5 = doc[keyFwMd5].as<String>();
+            info.valid = true;
+            anyValid = true;
+        }
+        if(doc.containsKey(keyFs) && doc.containsKey(keyFsMd5))
+        {
+            info.url_fs = String(baseUrl) + doc[keyFs].as<String>();
+            info.fs_md5 = doc[keyFsMd5].as<String>();
+            info.has_fs_update = true;
+        }
+    }
+
+    return anyValid;
 }
 
 /**********************************************************************/
@@ -248,6 +284,7 @@ void updateHandling_initWebserverEndpoints()
     {
         currentUpdateChannel = UPDATE_CHANNEL_DEV;
         updateHandling_clearVersionInfo(updateInfo_Part1);
+        updateHandling_clearVersionInfo(updateInfo_Part2);
         request->send(200, "text/plain", "Channel set to dev");
     });
 
@@ -255,6 +292,7 @@ void updateHandling_initWebserverEndpoints()
     {
         currentUpdateChannel = UPDATE_CHANNEL_STABLE;
         updateHandling_clearVersionInfo(updateInfo_Part1);
+        updateHandling_clearVersionInfo(updateInfo_Part2);
         request->send(200, "text/plain", "Channel set to stable");
     });
 
@@ -276,16 +314,29 @@ void updateHandling_initWebserverEndpoints()
         doc["channel"] = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev";
         doc["isFetching"] = fetchNewestVersionInfos;
         doc["isUpdating"] = isUpdating;
-        doc["componentName"] = updateInfo_Part1.componentName;
-        doc["available"] = updateInfo_Part1.valid;
-        doc["has_fs_update"] = updateInfo_Part1.has_fs_update;
-        doc["version"] = updateInfo_Part1.version;
-        doc["url_fw"] = updateInfo_Part1.url_fw;
-        doc["url_fs"] = updateInfo_Part1.url_fs;
-        doc["fw_md5"] = updateInfo_Part1.fw_md5;
-        doc["fs_md5"] = updateInfo_Part1.fs_md5;
-        doc["updateProgress_fw"] = updateInfo_Part1.updateProgress_fw;
-        doc["updateProgress_fs"] = updateInfo_Part1.updateProgress_fs;
+
+        JsonObject part1 = doc.createNestedObject(UPDATE_COMPONENT_PART1);
+        part1["available"] = updateInfo_Part1.valid;
+        part1["has_fs_update"] = updateInfo_Part1.has_fs_update;
+        part1["version"] = updateInfo_Part1.version;
+        part1["url_fw"] = updateInfo_Part1.url_fw;
+        part1["fw_md5"] = updateInfo_Part1.fw_md5;
+        part1["url_fs"] = updateInfo_Part1.url_fs;
+        part1["fs_md5"] = updateInfo_Part1.fs_md5;
+        part1["updateProgress_fw"] = updateInfo_Part1.updateProgress_fw;
+        part1["updateProgress_fs"] = updateInfo_Part1.updateProgress_fs;
+
+        JsonObject part2 = doc.createNestedObject(UPDATE_COMPONENT_PART2);
+        part2["available"] = updateInfo_Part2.valid;
+        part2["has_fs_update"] = updateInfo_Part2.has_fs_update;
+        part2["version"] = updateInfo_Part2.version;
+        part2["url_fw"] = updateInfo_Part2.url_fw;
+        part2["fw_md5"] = updateInfo_Part2.fw_md5;
+        part2["url_fs"] = updateInfo_Part2.url_fs;
+        part2["fs_md5"] = updateInfo_Part2.fs_md5;
+        part2["updateProgress_fw"] = updateInfo_Part2.updateProgress_fw;
+        part2["updateProgress_fs"] = updateInfo_Part2.updateProgress_fs;
+
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
@@ -297,6 +348,7 @@ void updateHandling_initWebserverEndpoints()
 void updateHandling_startFetchingNewestVersionInfos()
 {
     updateHandling_clearVersionInfo(updateInfo_Part1);
+    updateHandling_clearVersionInfo(updateInfo_Part2);
 
     // Set flag to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     fetchNewestVersionInfos = true;
@@ -314,13 +366,27 @@ void updateHandling_loop()
 {
     if(fetchNewestVersionInfos)
     {
-        String newVersion;
-        updateHandling_fetchVersion(updateInfo_Part1, "part1");
+        update_info_t* infos[] = { &updateInfo_Part1, &updateInfo_Part2 };
+        const char* componentNames[] = { UPDATE_COMPONENT_PART1, UPDATE_COMPONENT_PART2 };
+        size_t count = sizeof(infos) / sizeof(infos[0]);
+        updateHandling_fetchVersions(infos, componentNames, count);
+
         #ifdef DEBUG_OUTPUT
-            Serial.print("New version for part1: ");
-            Serial.print(updateInfo_Part1.valid ? "true" : "false");
-            Serial.print(", version: ");
-            Serial.print(updateInfo_Part1.version);
+            for(size_t i = 0; i < count; ++i)
+            {
+                update_info_t &info = *infos[i];
+                Serial.printf("Component: %s\n", info.componentName.c_str());
+                Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
+                Serial.printf("  Version: %s\n", info.version.c_str());
+                Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
+                Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
+                Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
+                if(info.has_fs_update)
+                {
+                    Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
+                    Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                }
+            }
         #endif
         fetchNewestVersionInfos = false;
     }
