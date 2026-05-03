@@ -10,8 +10,23 @@ enum UpdateChannel
     UPDATE_CHANNEL_DEV
 };
 
+enum UpdateStep
+{
+    UPDATE_STEP_FW,
+    UPDATE_STEP_FS
+};
+
 #define UPDATE_COMPONENT_PART1 "part1"
 #define UPDATE_COMPONENT_PART2 "part2"
+
+typedef struct update_status
+{
+    UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;     // Current update channel (stable or dev)
+    bool isFetchingNewestVersionInfos = false;  // This flag is true, when the device is currently fetching the newest version infos from the update server
+    bool isUpdating = false;                    // This flag is true, when the device is currently performing an update
+    UpdateStep updateStep = UPDATE_STEP_FW;     // Current step of the update process (firmware update or filesystem update)
+    float updateProgress = 0.0f;                // Progress of the current or last firmware and filesystem update (0.0 to 100.0)
+} update_status_t;
 
 typedef struct update_info
 {
@@ -23,12 +38,11 @@ typedef struct update_info
     String url_fs;          // Filesystem URL (if applicable, otherwise empty)
     String fw_md5;          // MD5 hash of the firmware binary for integrity check
     String fs_md5;          // MD5 hash of the filesystem binary for integrity check (if applicable, otherwise empty)
-    float updateProgress_fw; // Progress of the firmware update (0.0 to 100.0)
-    float updateProgress_fs; // Progress of the filesystem update (0.0 to 100.0)
 } update_info_t;
 
-extern UpdateChannel currentUpdateChannel;
+extern update_status_t updateStatus;
 extern update_info_t updateInfo_Part1;
+extern update_info_t updateInfo_Part2;
 
 void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();

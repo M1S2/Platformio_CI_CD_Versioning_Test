@@ -16,6 +16,37 @@
 		
 		<h2 id="testText"></h2>
 		<div id="testVersion"></div>
+
+
+
+		<div class="update-container">
+			<!-- Part1 BLOCK -->
+			<div class="card part1-card" id="part1-card">
+				<h2>Part1</h2>
+
+				<div class="info">
+					<p>Status: <span id="part1-status">Idle</span></p>
+					<p>Aktuell: <span id="part1-current">-</span></p>
+					<p>Neu: <span id="part1-available">-</span></p>
+					<p>Update-Kanal: <span id="updateChannel">-</span></p>
+				</div>
+
+				<div class="actions">
+					<button onclick="setChannel('stable')">Set Channel Stable</button>
+					<button onclick="setChannel('dev')">Set Channel Dev</button>
+					<button onclick="checkUpdate()">Check</button>
+					<button onclick="startUpdatePart1()">Update Part1</button>
+				</div>
+
+				<progress id="part1-progress" max="100"></progress>
+			</div>
+
+			<!-- PART2 COLUMN -->
+			<!--<div class="card part2-column" id="part2-list">-->
+				<!-- Generated dynamically -->
+			<!--</div>-->
+		</div>
+
 	</body>
 	<script src="index.js"></script>
 </html>

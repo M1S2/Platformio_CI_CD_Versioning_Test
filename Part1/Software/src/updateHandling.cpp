@@ -6,8 +6,7 @@
 #include "wifiHandling.h"
 #include "timeHandling.h"
 #include "certs.h"
-
-UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;
+#include "version.h"
 
 const char* stableBaseUrl = "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/";
 const char* devBaseUrl = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/";
@@ -40,11 +39,9 @@ Dev Manifest Format:
 // Create a list of certificates with the server certificate
 X509List cert(ROOT_CA_CERT);
 
+update_status_t updateStatus;
 update_info_t updateInfo_Part1;
 update_info_t updateInfo_Part2;
-bool fetchNewestVersionInfos = false;
-bool isUpdating = false;
-bool currentlyUpdatingFs = false;
 
 /**********************************************************************/
 
@@ -63,11 +60,11 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
         return false;
     }
 
-    const char* baseUrl = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
+    const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
     String manifestUrl = String(baseUrl) + manifestFilename;
 
     #ifdef DEBUG_OUTPUT
-        Serial.printf("Checking for %s update...\n", (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
+        Serial.printf("Checking for %s update...\n", (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
     #endif
 
     WiFiClientSecure client;
@@ -119,8 +116,6 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
         info.fw_md5 = "";
         info.fs_md5 = "";
         info.has_fs_update = false;
-        info.updateProgress_fw = 0.0f;
-        info.updateProgress_fs = 0.0f;
 
         String keyVersion = "version";
         String keyFw = componentName + "_fw";
@@ -180,21 +175,45 @@ bool updateHandling_performUpdate(update_info_t &info)
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
 
-    currentlyUpdatingFs = false;
+    updateStatus.isUpdating = true;
+    updateStatus.updateStep = UPDATE_STEP_FW;
 
+    ESPhttpUpdate.onStart([&info]()
+    {
+        if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FS))
+        {
+            updateStatus.updateProgress = 0.0f;
+        }
+    });
+    ESPhttpUpdate.onEnd([&info]()
+    {
+        if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FW))
+        {
+            updateStatus.updateProgress = 100.0f;
+        }
+    });
     ESPhttpUpdate.onProgress([&info](int cur, int total)
     {
         float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
         #ifdef DEBUG_OUTPUT
             Serial.printf("Progress: %d / %d (%.2f%%)\n", cur, total, percent);
         #endif
-        if(!currentlyUpdatingFs)
+        if(!info.has_fs_update)
         {
-            info.updateProgress_fw = percent;
+            updateStatus.updateProgress = percent;
         }
         else
         {
-            info.updateProgress_fs = percent;
+            if(updateStatus.updateStep == UPDATE_STEP_FS)
+            {
+                // First half of the update progress is for the filesystem update, which is performed before the firmware update.
+                updateStatus.updateProgress = percent * 0.5f;
+            }
+            else
+            {
+                // Second half of the update progress is for the firmware update, which is performed after the filesystem update.
+                updateStatus.updateProgress = 50.0f + (percent * 0.5f);
+            }
         }
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
@@ -202,7 +221,7 @@ bool updateHandling_performUpdate(update_info_t &info)
     bool fsUpdateResult = true;
     if(info.has_fs_update)
     {
-        currentlyUpdatingFs = true;
+        updateStatus.updateStep = UPDATE_STEP_FS;
         #ifdef DEBUG_OUTPUT
             Serial.println("Update file system...");
         #endif
@@ -227,7 +246,7 @@ bool updateHandling_performUpdate(update_info_t &info)
                 break;
         }
         fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
-        currentlyUpdatingFs = false;
+        updateStatus.updateStep = UPDATE_STEP_FW;
     }
 
     bool fwUpdateResult = true;
@@ -270,52 +289,77 @@ void updateHandling_clearVersionInfo(update_info_t &info)
     info.fw_md5 = "";
     info.fs_md5 = "";
     info.has_fs_update = false;
-    info.updateProgress_fw = 0.0f;
-    info.updateProgress_fs = 0.0f;
-    isUpdating = false;
-    fetchNewestVersionInfos = false;
 }
 
 /**********************************************************************/
 
 void updateHandling_initWebserverEndpoints()
 {
-    server.on("/update/set_channel_dev", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/set_channel", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        currentUpdateChannel = UPDATE_CHANNEL_DEV;
+        if(updateStatus.isFetchingNewestVersionInfos || updateStatus.isUpdating)
+        {
+            request->send(400, "text/plain", "Cannot change update channel while fetching version infos or performing an update");
+            return;
+        }
+
+        String channel = "";
+        if (request->hasParam("channel"))
+        {
+            channel = request->getParam("channel")->value();
+        }
+
+        if (channel == "dev")
+        {
+            updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
+        }
+        else if (channel == "stable")
+        {
+            updateStatus.currentUpdateChannel = UPDATE_CHANNEL_STABLE;
+        }
+        else
+        {
+            request->send(400, "text/plain", "Missing or invalid channel parameter");
+            return;
+        }
+
         updateHandling_clearVersionInfo(updateInfo_Part1);
         updateHandling_clearVersionInfo(updateInfo_Part2);
-        request->send(200, "text/plain", "Channel set to dev");
+        request->send(200, "text/plain", "Channel set to " + channel);
     });
 
-    server.on("/update/set_channel_stable", HTTP_GET, [](AsyncWebServerRequest *request)
-    {
-        currentUpdateChannel = UPDATE_CHANNEL_STABLE;
-        updateHandling_clearVersionInfo(updateInfo_Part1);
-        updateHandling_clearVersionInfo(updateInfo_Part2);
-        request->send(200, "text/plain", "Channel set to stable");
-    });
-
-    server.on("/update/start_fetch", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/check", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         updateHandling_startFetchingNewestVersionInfos();
-        request->send(200, "text/plain", "Fetching...");
+        request->send(200, "text/plain", "Check for updates started...");
     });
 
     server.on("/update/start", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         updateHandling_startUpdate();
-        request->send(200, "text/plain", "Update started");
+        request->send(200, "text/plain", "Update started...");
     });
 
-    server.on("/update/get_info", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        DynamicJsonDocument doc(512);
+        doc["channel"] = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev";
+        doc["isFetching"] = updateStatus.isFetchingNewestVersionInfos;
+        doc["isUpdating"] = updateStatus.isUpdating;
+        doc["updateStep"] = (updateStatus.updateStep == UPDATE_STEP_FW) ? "firmware" : "filesystem";
+        doc["updateProgress"] = updateStatus.updateProgress;
+
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         DynamicJsonDocument doc(2048);
-        doc["channel"] = (currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev";
-        doc["isFetching"] = fetchNewestVersionInfos;
-        doc["isUpdating"] = isUpdating;
 
         JsonObject part1 = doc.createNestedObject(UPDATE_COMPONENT_PART1);
+        part1["currentVersion"] = FW_VERSION;
         part1["available"] = updateInfo_Part1.valid;
         part1["has_fs_update"] = updateInfo_Part1.has_fs_update;
         part1["version"] = updateInfo_Part1.version;
@@ -323,8 +367,6 @@ void updateHandling_initWebserverEndpoints()
         part1["fw_md5"] = updateInfo_Part1.fw_md5;
         part1["url_fs"] = updateInfo_Part1.url_fs;
         part1["fs_md5"] = updateInfo_Part1.fs_md5;
-        part1["updateProgress_fw"] = updateInfo_Part1.updateProgress_fw;
-        part1["updateProgress_fs"] = updateInfo_Part1.updateProgress_fs;
 
         JsonObject part2 = doc.createNestedObject(UPDATE_COMPONENT_PART2);
         part2["available"] = updateInfo_Part2.valid;
@@ -334,8 +376,6 @@ void updateHandling_initWebserverEndpoints()
         part2["fw_md5"] = updateInfo_Part2.fw_md5;
         part2["url_fs"] = updateInfo_Part2.url_fs;
         part2["fs_md5"] = updateInfo_Part2.fs_md5;
-        part2["updateProgress_fw"] = updateInfo_Part2.updateProgress_fw;
-        part2["updateProgress_fs"] = updateInfo_Part2.updateProgress_fs;
 
         String response;
         serializeJson(doc, response);
@@ -351,20 +391,20 @@ void updateHandling_startFetchingNewestVersionInfos()
     updateHandling_clearVersionInfo(updateInfo_Part2);
 
     // Set flag to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
-    fetchNewestVersionInfos = true;
+    updateStatus.isFetchingNewestVersionInfos = true;
 }
 
 void updateHandling_startUpdate()
 {    
     // Set flag to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
-    isUpdating = true;
+    updateStatus.isUpdating = true;
 }
 
 /**********************************************************************/
 
 void updateHandling_loop()
 {
-    if(fetchNewestVersionInfos)
+    if(updateStatus.isFetchingNewestVersionInfos)
     {
         update_info_t* infos[] = { &updateInfo_Part1, &updateInfo_Part2 };
         const char* componentNames[] = { UPDATE_COMPONENT_PART1, UPDATE_COMPONENT_PART2 };
@@ -388,19 +428,19 @@ void updateHandling_loop()
                 }
             }
         #endif
-        fetchNewestVersionInfos = false;
+        updateStatus.isFetchingNewestVersionInfos = false;
     }
-    else if(isUpdating)
+    else if(updateStatus.isUpdating)
     {
         if(!updateInfo_Part1.valid)
         {
             // If no valid update info is available, fetch it first before trying to perform the update (e.g. in case the user directly clicks the "Start Update" button without first clicking the "Fetch Newest Version Infos" button in the web interface)
-            fetchNewestVersionInfos = true;
+            updateStatus.isFetchingNewestVersionInfos = true;
         }
         else
         {
             updateHandling_performUpdate(updateInfo_Part1);
-            isUpdating = false;
+            updateStatus.isUpdating = false;
         }
     }
 }
