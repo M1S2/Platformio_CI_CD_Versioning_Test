@@ -7,6 +7,7 @@
 #include "updateHandling.h"
 
 AsyncWebServer server(80);
+AsyncEventSource events(SERVER_EVENT_SOURCE);
 DNSServer dns;
 AsyncWiFiManager wifiManager(&server, &dns);
 
@@ -51,6 +52,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event)
 
 void wifiHandling_initWebserverFiles()
 {
+    server.addHandler(&events);
     server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
     server.onNotFound([](AsyncWebServerRequest *request)
     {

@@ -8,10 +8,8 @@ extern AsyncWebServer server;
 extern AsyncEventSource events;
 
 #define SERVER_EVENT_SOURCE                     "/events"
-#define SERVER_EVENT_SENSOR_PAIRED              "sensorPaired"
-#define SERVER_EVENT_SENSOR_PAIRING_TIMEOUT     "sensorPairingTimeout"
-#define SERVER_EVENT_SENSOR_NEW_MESSAGE         "newSensorMessage"
-#define SERVER_EVENT_SENSOR_MODE_CHANGED        "sensorModeChanged"
+#define SERVER_EVENT_UPDATE_PROGRESS            "updateProgress"
+#define SERVER_EVENT_UPDATE_STATUS              "updateStatus"
 
 enum WifiState
 {

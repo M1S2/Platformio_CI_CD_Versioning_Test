@@ -147,6 +147,17 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 /**********************************************************************/
 
+static void updateHandling_sendProgressEvent(float progress)
+{
+    String payload = String(progress, 2);
+    events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
+}
+
+static void updateHandling_sendStatusEvent(String status)
+{
+    events.send(status.c_str(), SERVER_EVENT_UPDATE_STATUS);
+}
+
 bool updateHandling_performUpdate(update_info_t &info)
 {
     if (!info.valid)
@@ -178,11 +189,14 @@ bool updateHandling_performUpdate(update_info_t &info)
     updateStatus.isUpdating = true;
     updateStatus.updateStep = UPDATE_STEP_FW;
 
+    static unsigned long lastProgressEventTime = 0;
+
     ESPhttpUpdate.onStart([&info]()
     {
         if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FS))
         {
             updateStatus.updateProgress = 0.0f;
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
         }
     });
     ESPhttpUpdate.onEnd([&info]()
@@ -190,10 +204,11 @@ bool updateHandling_performUpdate(update_info_t &info)
         if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FW))
         {
             updateStatus.updateProgress = 100.0f;
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
         }
     });
     ESPhttpUpdate.onProgress([&info](int cur, int total)
-    {
+    {        
         float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
         #ifdef DEBUG_OUTPUT
             Serial.printf("Progress: %d / %d (%.2f%%)\n", cur, total, percent);
@@ -215,6 +230,15 @@ bool updateHandling_performUpdate(update_info_t &info)
                 updateStatus.updateProgress = 50.0f + (percent * 0.5f);
             }
         }
+        
+        // Send event only every UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS
+        unsigned long currentTime = millis();
+        if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS)
+        {
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
+            lastProgressEventTime = currentTime;
+        }
+        
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
@@ -222,6 +246,7 @@ bool updateHandling_performUpdate(update_info_t &info)
     if(info.has_fs_update)
     {
         updateStatus.updateStep = UPDATE_STEP_FS;
+        updateHandling_sendStatusEvent("Updating filesystem");
         #ifdef DEBUG_OUTPUT
             Serial.println("Update file system...");
         #endif
@@ -250,10 +275,12 @@ bool updateHandling_performUpdate(update_info_t &info)
     }
 
     bool fwUpdateResult = true;
+    updateHandling_sendStatusEvent("Updating firmware");
     #ifdef DEBUG_OUTPUT
         Serial.println("Update firmware...");
     #endif
     ESPhttpUpdate.setMD5sum(info.fw_md5);
+    ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
     t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(client, info.url_fw);
     switch (returnFwUpdate)
     {
@@ -274,6 +301,24 @@ bool updateHandling_performUpdate(update_info_t &info)
             break;
     }
     fwUpdateResult = (returnFwUpdate == HTTP_UPDATE_OK);
+
+    if(fwUpdateResult)
+    {
+        updateHandling_sendStatusEvent("Update completed. Restarting device...");
+    
+        // Wait for 2 seconds to ensure that the HTTP response is sent completely before restarting.
+        // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
+        unsigned long start = millis();
+        while (millis() - start < 3000)
+        {
+            yield();
+        }
+        ESP.restart();
+    }
+    else
+    {
+        updateHandling_sendStatusEvent("Update failed");
+    }
 
     return fsUpdateResult && fwUpdateResult;
 }

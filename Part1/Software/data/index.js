@@ -1,3 +1,5 @@
+let updateProgressSource = null;
+
 function bodyLoaded()
 {
 	fetch('/test')
@@ -11,9 +13,44 @@ function bodyLoaded()
 		testVersion.textContent = testData.version;
 	});
 
+	initUpdateProgressEvents();
 	checkUpdate();
 }
 
+function initUpdateProgressEvents()
+{
+	if (updateProgressSource)
+	{
+		return;
+	}
+
+	updateProgressSource = new EventSource('/events');
+	updateProgressSource.addEventListener('updateProgress', event =>
+	{
+		const progressValue = parseFloat(event.data);
+		if (!Number.isNaN(progressValue))
+		{
+			const progressBar = document.getElementById('part1-progress');
+			if (progressBar)
+			{
+				progressBar.value = progressValue;
+			}
+		}
+	});
+	updateProgressSource.addEventListener('updateStatus', event =>
+	{
+		const status = event.data;
+		const part1Status = document.getElementById('part1-status');
+		if (part1Status)
+		{
+			part1Status.innerText = status;
+		}
+	});
+	updateProgressSource.onerror = () =>
+	{
+		console.warn('EventSource connection for updateProgress failed or closed');
+	};
+}
 
 async function getUpdateStatusAndInfo()
 {
@@ -123,30 +160,5 @@ async function checkUpdate()
 
 async function startUpdatePart1()
 {
-  const part1Status = document.getElementById('part1-status');
-  if (part1Status) part1Status.innerText = 'Starting update...';
-
-  const progressBar = document.getElementById('part1-progress');
-  if (progressBar) progressBar.value = 0;
-
   await fetch('/update/start');
-
-  let status;
-  do
-  {
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    const res = await fetch('/update/status');
-    status = await res.json();
-    displayUpdateStatus(status);
-  }
-  while (status.isUpdating);
-
-  await getUpdateStatusAndInfo();
-
-  if (part1Status) part1Status.innerText = 'Done';
 }
-
-//async function updateSensor(id)
-//{
-//  await fetch(`/sensor/${id}/update/start`);
-//}
