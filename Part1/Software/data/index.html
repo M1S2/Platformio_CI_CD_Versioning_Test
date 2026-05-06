@@ -20,31 +20,59 @@
 
 
 		<div class="update-container">
-			<!-- Part1 BLOCK -->
-			<div class="card part1-card" id="part1-card">
-				<h2>Part1</h2>
+			<!-- Common Status/Control Card -->
+			<div class="card update-common-card">
+				<h2>Allgemein</h2>
 
-				<div class="info">
-					<p>Status: <span id="part1-status">Idle</span></p>
-					<p>Aktuell: <span id="part1-current">-</span></p>
-					<p>Neu: <span id="part1-available">-</span></p>
-					<p>Update-Kanal: <span id="updateChannel">-</span></p>
+				<div>
+					<p>Update-Kanal: <span id="update_channel">-</span></p>
+					<p>Status: <span id="update_status">Idle</span></p>
+					<progress id="update_progress" max="100"></progress>
 				</div>
 
-				<div class="actions">
-					<button onclick="setChannel('stable')">Set Channel Stable</button>
-					<button onclick="setChannel('dev')">Set Channel Dev</button>
-					<button onclick="checkUpdate()">Check</button>
-					<button onclick="startUpdatePart1()">Update Part1</button>
+				<div>
+					<button onclick="setUpdateChannel('stable')">Set Channel Stable</button>
+					<button onclick="setUpdateChannel('dev')">Set Channel Dev</button>
+					<button onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
 				</div>
-
-				<progress id="part1-progress" max="100"></progress>
 			</div>
 
-			<!-- PART2 COLUMN -->
-			<!--<div class="card part2-column" id="part2-list">-->
-				<!-- Generated dynamically -->
-			<!--</div>-->
+			<!-- Two Columns -->
+			<div class="update-columns-container">
+				<!-- Part1 BLOCK -->
+				<div class="card update-part1-card" id="part1-card">
+					<h2>Part1</h2>
+
+					<div>
+						<p>Aktuell: <span id="part1-current-version">-</span></p>
+						<p>Neu: <span id="part1-available-version">-</span></p>
+					</div>
+
+					<div>
+						<form action="/update/start" method="get">
+							<input type="hidden" name="part" value="part1">
+							<button type="submit" title="Update Part1"><i class="material-symbols-outlined">upload</i></button>
+						</form>
+					</div>
+				</div>
+
+				<!-- Part2 BLOCK -->
+				<div class="card update-part2-card" id="part2-card">
+					<h2>Part2</h2>
+
+					<div>
+						<p>Aktuell: <span id="part2-current-version">-</span></p>
+						<p>Neu: <span id="part2-available-version">-</span></p>
+					</div>
+
+					<div>
+						<form action="/update/start" method="get">
+							<input type="hidden" name="part" value="part2">
+							<button type="submit" title="Update Part2"><i class="material-symbols-outlined">upload</i></button>
+						</form>
+					</div>
+				</div>
+			</div>
 		</div>
 
 	</body>

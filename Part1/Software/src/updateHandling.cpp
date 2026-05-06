@@ -381,8 +381,27 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/start", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        updateHandling_startUpdate();
-        request->send(200, "text/plain", "Update started...");
+        String part = "";
+        if (request->hasParam("part"))
+        {
+            part = request->getParam("part")->value();
+        }
+
+        if (part == "part1")
+        {
+            updateHandling_startUpdate();
+            request->send(200, "text/plain", "Update started...");
+        }
+        else if (part == "part2")
+        {
+            request->send(400, "text/plain", "Updating part2 is currently not supported");
+            return;
+        }
+        else
+        {
+            request->send(400, "text/plain", "Missing or invalid part parameter");
+            return;
+        }
     });
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -404,7 +423,6 @@ void updateHandling_initWebserverEndpoints()
         DynamicJsonDocument doc(2048);
 
         JsonObject part1 = doc.createNestedObject(UPDATE_COMPONENT_PART1);
-        part1["currentVersion"] = FW_VERSION;
         part1["available"] = updateInfo_Part1.valid;
         part1["has_fs_update"] = updateInfo_Part1.has_fs_update;
         part1["version"] = updateInfo_Part1.version;
@@ -412,6 +430,8 @@ void updateHandling_initWebserverEndpoints()
         part1["fw_md5"] = updateInfo_Part1.fw_md5;
         part1["url_fs"] = updateInfo_Part1.url_fs;
         part1["fs_md5"] = updateInfo_Part1.fs_md5;
+        JsonArray currentVersionsPart1 = part1.createNestedArray("currentVersions");
+        currentVersionsPart1.add(FW_VERSION);
 
         JsonObject part2 = doc.createNestedObject(UPDATE_COMPONENT_PART2);
         part2["available"] = updateInfo_Part2.valid;
@@ -421,6 +441,8 @@ void updateHandling_initWebserverEndpoints()
         part2["fw_md5"] = updateInfo_Part2.fw_md5;
         part2["url_fs"] = updateInfo_Part2.url_fs;
         part2["fs_md5"] = updateInfo_Part2.fs_md5;
+        JsonArray currentVersionsPart2 = part2.createNestedArray("currentVersions");
+        currentVersionsPart2.add("?");
 
         String response;
         serializeJson(doc, response);

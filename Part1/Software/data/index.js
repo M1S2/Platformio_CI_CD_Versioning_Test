@@ -30,7 +30,7 @@ function initUpdateProgressEvents()
 		const progressValue = parseFloat(event.data);
 		if (!Number.isNaN(progressValue))
 		{
-			const progressBar = document.getElementById('part1-progress');
+			const progressBar = document.getElementById('update_progress');
 			if (progressBar)
 			{
 				progressBar.value = progressValue;
@@ -39,11 +39,11 @@ function initUpdateProgressEvents()
 	});
 	updateProgressSource.addEventListener('updateStatus', event =>
 	{
-		const status = event.data;
-		const part1Status = document.getElementById('part1-status');
-		if (part1Status)
+		const updateStatus = event.data;
+		const updateStatusElement = document.getElementById('update_status');
+		if (updateStatusElement)
 		{
-			part1Status.innerText = status;
+			updateStatusElement.innerText = updateStatus;
 		}
 	});
 	updateProgressSource.onerror = () =>
@@ -59,59 +59,59 @@ async function getUpdateStatusAndInfo()
 		fetch('/update/info')
 	]);
 
-	const status = await statusRes.json();
-	const info = await infoRes.json();
+	const updateStatus = await statusRes.json();
+	const updateInfo = await infoRes.json();
 
-	displayUpdateStatus(status);
-	displayUpdateInfos(info);
+	displayUpdateStatus(updateStatus);
+	displayUpdateInfos(updateInfo);
 }
 
-function displayUpdateStatus(status)
+function displayUpdateStatus(updateStatus)
 {
-	const part1Status = document.getElementById('part1-status');
-	const progressBar = document.getElementById('part1-progress');
-	const updateChannel = document.getElementById('updateChannel');
-
-	if (progressBar && typeof status.updateProgress === 'number')
-	{
-		progressBar.value = status.updateProgress;
-	}
+	const updateStatusElement = document.getElementById('update_status');
+	const updateChannel = document.getElementById('update_channel');
+	const progressBar = document.getElementById('update_progress');
 
 	if (updateChannel)
 	{
-		updateChannel.innerText = status.channel || '-';
+		updateChannel.innerText = updateStatus.channel || '-';
 	}
 
-	if (part1Status)
+	if (updateStatusElement)
 	{
-		if (status.isUpdating)
+		if (updateStatus.isUpdating)
 		{
-			part1Status.innerText = 'Updating ' + status.updateStep;
+			updateStatusElement.innerText = 'Updating ' + updateStatus.updateStep;
 		}
-		else if (status.isFetching)
+		else if (updateStatus.isFetching)
 		{
-			part1Status.innerText = 'Fetching';
+			updateStatusElement.innerText = 'Fetching';
 		}
 		else
 		{
-			part1Status.innerText = 'Idle';
+			updateStatusElement.innerText = 'Idle';
 		}
+	}
+
+	if (progressBar && typeof updateStatus.updateProgress === 'number')
+	{
+		progressBar.value = updateStatus.updateProgress;
 	}
 }
 
-function displayUpdateInfos(info)
+function displayUpdateInfos(updateInfo)
 {
-	const part1CurrentVersion = document.getElementById('part1-current');
-	const part1AvailableVersion = document.getElementById('part1-available');
+	const part1CurrentVersion = document.getElementById('part1-current-version');
+	const part1AvailableVersion = document.getElementById('part1-available-version');
 
-	if (part1CurrentVersion) part1CurrentVersion.innerText = info.part1.currentVersion || '-';
-	if (part1AvailableVersion) part1AvailableVersion.innerText = info.part1.available ? (info.part1.version || '-') : '?';
+	if (part1CurrentVersion) part1CurrentVersion.innerText = (updateInfo.part1.currentVersions && updateInfo.part1.currentVersions.length > 0) ? updateInfo.part1.currentVersions[0] : '-';
+	if (part1AvailableVersion) part1AvailableVersion.innerText = updateInfo.part1.available ? (updateInfo.part1.version || '-') : '?';
 
-	const container = document.getElementById('part2-list');
-	if (container)
-	{
-		container.innerHTML = '';
-	}
+	const part2CurrentVersion = document.getElementById('part2-current-version');
+	const part2AvailableVersion = document.getElementById('part2-available-version');
+
+	if (part2CurrentVersion) part2CurrentVersion.innerText = (updateInfo.part2.currentVersions && updateInfo.part2.currentVersions.length > 0) ? updateInfo.part2.currentVersions[0] : '-';
+	if (part2AvailableVersion) part2AvailableVersion.innerText = updateInfo.part2.available ? (updateInfo.part2.version || '-') : '?';
 
 	/*data.sensors.forEach(sensor => {
 		const el = document.createElement('div');
@@ -131,7 +131,7 @@ function displayUpdateInfos(info)
 	});*/
 }
 
-async function setChannel(channel)
+async function setUpdateChannel(channel)
 {
   await fetch(`/update/set_channel?channel=${encodeURIComponent(channel)}`);
   getUpdateStatusAndInfo();
@@ -139,26 +139,21 @@ async function setChannel(channel)
 
 async function checkUpdate()
 {
-  const part1Status = document.getElementById('part1-status');
-  if (part1Status) part1Status.innerText = 'Checking...';
+  const updateStatusElement = document.getElementById('update_status');
+  if (updateStatusElement) updateStatusElement.innerText = 'Checking...';
 
   await fetch('/update/check');
 
-  let status;
+  let updateStatus;
   do
   {
     await new Promise(resolve => setTimeout(resolve, 500));
     const res = await fetch('/update/status');
-    status = await res.json();
+    updateStatus = await res.json();
   }
-  while (status.isFetching);
+  while (updateStatus.isFetching);
 
   await getUpdateStatusAndInfo();
 
-  if (part1Status) part1Status.innerText = 'Ready';
-}
-
-async function startUpdatePart1()
-{
-  await fetch('/update/start');
+  if (updateStatusElement) updateStatusElement.innerText = 'Ready';
 }
