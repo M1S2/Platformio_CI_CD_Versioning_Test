@@ -40,8 +40,19 @@ Dev Manifest Format:
 X509List cert(ROOT_CA_CERT);
 
 update_status_t updateStatus;
+
 update_info_t updateInfo_Part1;
 update_info_t updateInfo_Part2;
+update_info_t* updateInfos[] = { &updateInfo_Part1, &updateInfo_Part2 };
+
+const char* componentNames[] = { UPDATE_COMPONENT_PART1, UPDATE_COMPONENT_PART2 };
+
+// Current versions arrays for each component
+const char* currentVersionsPart1[] = { FW_VERSION };
+const char* currentVersionsPart2[] = { "?", "?" };
+const char** currentVersionsArray[] = { currentVersionsPart1, currentVersionsPart2 };
+const size_t currentVersionsCounts[] = { sizeof(currentVersionsPart1) / sizeof(currentVersionsPart1[0]), 
+                                        sizeof(currentVersionsPart2) / sizeof(currentVersionsPart2[0]) };
 
 /**********************************************************************/
 
@@ -325,15 +336,19 @@ bool updateHandling_performUpdate(update_info_t &info)
 
 /**********************************************************************/
 
-void updateHandling_clearVersionInfo(update_info_t &info)
+void updateHandling_clearVersionInfos()
 {
-    info.valid = false;
-    info.version = "";
-    info.url_fw = "";
-    info.url_fs = "";
-    info.fw_md5 = "";
-    info.fs_md5 = "";
-    info.has_fs_update = false;
+    size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
+    for (size_t i = 0; i < count; ++i)
+    {   
+        updateInfos[i]->valid = false;
+        updateInfos[i]->version = "";
+        updateInfos[i]->url_fw = "";
+        updateInfos[i]->url_fs = "";
+        updateInfos[i]->fw_md5 = "";
+        updateInfos[i]->fs_md5 = "";
+        updateInfos[i]->has_fs_update = false;
+    }
 }
 
 /**********************************************************************/
@@ -368,40 +383,62 @@ void updateHandling_initWebserverEndpoints()
             return;
         }
 
-        updateHandling_clearVersionInfo(updateInfo_Part1);
-        updateHandling_clearVersionInfo(updateInfo_Part2);
+        updateHandling_clearVersionInfos();
         request->send(200, "text/plain", "Channel set to " + channel);
     });
 
     server.on("/update/check", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        updateHandling_startFetchingNewestVersionInfos();
-        request->send(200, "text/plain", "Check for updates started...");
-    });
-
-    server.on("/update/start", HTTP_GET, [](AsyncWebServerRequest *request)
-    {
-        String part = "";
-        if (request->hasParam("part"))
+        if(updateStatus.isFetchingNewestVersionInfos || updateStatus.isUpdating)
         {
-            part = request->getParam("part")->value();
-        }
-
-        if (part == "part1")
-        {
-            updateHandling_startUpdate();
-            request->send(200, "text/plain", "Update started...");
-        }
-        else if (part == "part2")
-        {
-            request->send(400, "text/plain", "Updating part2 is currently not supported");
+            request->send(400, "text/plain", "Already fetching version infos or performing an update");
             return;
         }
         else
         {
-            request->send(400, "text/plain", "Missing or invalid part parameter");
-            return;
+            updateHandling_startFetchingNewestVersionInfos();
+            request->send(200, "text/plain", "Check for updates...");
         }
+    });
+
+    server.on("/update/start", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        String component = "";
+        if (request->hasParam("component"))
+        {
+            component = request->getParam("component")->value();
+        }
+        
+#warning Currently the index parameter is not used.
+        String indexStr = "";
+        if(request->hasParam("index"))
+        {
+            indexStr = request->getParam("index")->value();
+        }
+
+        DynamicJsonDocument doc(512);
+        int resultCode = 200;
+        if (component == "part1")
+        {
+            updateHandling_startUpdate();
+            doc["status"] = "ok";
+            doc["message"] = "Update for part1 started";
+        }
+        else if (component == "part2")
+        {
+            doc["status"] = "error";
+            doc["message"] = "Update for part2 not supported";
+            resultCode = 400;
+        }
+        else
+        {
+            doc["status"] = "error";
+            doc["message"] = "Invalid component \"" + component + "\"";
+            resultCode = 400;
+        }
+        String response;
+        serializeJson(doc, response);
+        request->send(resultCode, "application/json", response);
     });
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -421,28 +458,27 @@ void updateHandling_initWebserverEndpoints()
     server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         DynamicJsonDocument doc(2048);
+        JsonArray componentsArray = doc.createNestedArray("components");
 
-        JsonObject part1 = doc.createNestedObject(UPDATE_COMPONENT_PART1);
-        part1["available"] = updateInfo_Part1.valid;
-        part1["has_fs_update"] = updateInfo_Part1.has_fs_update;
-        part1["version"] = updateInfo_Part1.version;
-        part1["url_fw"] = updateInfo_Part1.url_fw;
-        part1["fw_md5"] = updateInfo_Part1.fw_md5;
-        part1["url_fs"] = updateInfo_Part1.url_fs;
-        part1["fs_md5"] = updateInfo_Part1.fs_md5;
-        JsonArray currentVersionsPart1 = part1.createNestedArray("currentVersions");
-        currentVersionsPart1.add(FW_VERSION);
-
-        JsonObject part2 = doc.createNestedObject(UPDATE_COMPONENT_PART2);
-        part2["available"] = updateInfo_Part2.valid;
-        part2["has_fs_update"] = updateInfo_Part2.has_fs_update;
-        part2["version"] = updateInfo_Part2.version;
-        part2["url_fw"] = updateInfo_Part2.url_fw;
-        part2["fw_md5"] = updateInfo_Part2.fw_md5;
-        part2["url_fs"] = updateInfo_Part2.url_fs;
-        part2["fs_md5"] = updateInfo_Part2.fs_md5;
-        JsonArray currentVersionsPart2 = part2.createNestedArray("currentVersions");
-        currentVersionsPart2.add("?");
+        size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
+        for (size_t i = 0; i < count; ++i)
+        {
+            JsonObject component = componentsArray.createNestedObject();
+            component["name"] = componentNames[i];
+            component["available"] = updateInfos[i]->valid;
+            component["has_fs_update"] = updateInfos[i]->has_fs_update;
+            component["version"] = updateInfos[i]->version;
+            component["url_fw"] = updateInfos[i]->url_fw;
+            component["fw_md5"] = updateInfos[i]->fw_md5;
+            component["url_fs"] = updateInfos[i]->url_fs;
+            component["fs_md5"] = updateInfos[i]->fs_md5;
+            
+            JsonArray versionsArray = component.createNestedArray("currentVersions");
+            for (size_t j = 0; j < currentVersionsCounts[i]; ++j)
+            {
+                versionsArray.add(currentVersionsArray[i][j]);
+            }
+        }
 
         String response;
         serializeJson(doc, response);
@@ -454,9 +490,7 @@ void updateHandling_initWebserverEndpoints()
 
 void updateHandling_startFetchingNewestVersionInfos()
 {
-    updateHandling_clearVersionInfo(updateInfo_Part1);
-    updateHandling_clearVersionInfo(updateInfo_Part2);
-
+    updateHandling_clearVersionInfos();
     // Set flag to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     updateStatus.isFetchingNewestVersionInfos = true;
 }
@@ -473,15 +507,13 @@ void updateHandling_loop()
 {
     if(updateStatus.isFetchingNewestVersionInfos)
     {
-        update_info_t* infos[] = { &updateInfo_Part1, &updateInfo_Part2 };
-        const char* componentNames[] = { UPDATE_COMPONENT_PART1, UPDATE_COMPONENT_PART2 };
-        size_t count = sizeof(infos) / sizeof(infos[0]);
-        updateHandling_fetchVersions(infos, componentNames, count);
+        size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
+        updateHandling_fetchVersions(updateInfos, componentNames, count);
 
         #ifdef DEBUG_OUTPUT
             for(size_t i = 0; i < count; ++i)
             {
-                update_info_t &info = *infos[i];
+                update_info_t &info = *updateInfos[i];
                 Serial.printf("Component: %s\n", info.componentName.c_str());
                 Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
                 Serial.printf("  Version: %s\n", info.version.c_str());

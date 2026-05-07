@@ -2,18 +2,8 @@ let updateProgressSource = null;
 
 function bodyLoaded()
 {
-	fetch('/test')
-	.then(response => response.json())
-	.then(testData =>
-	{
-		const testText = document.getElementById('testText');
-		testText.textContent = testData.text;
-
-		const testVersion = document.getElementById('testVersion');
-		testVersion.textContent = testData.version;
-	});
-
 	initUpdateProgressEvents();
+	getUpdateStatusAndInfo();
 	checkUpdate();
 }
 
@@ -62,8 +52,101 @@ async function getUpdateStatusAndInfo()
 	const updateStatus = await statusRes.json();
 	const updateInfo = await infoRes.json();
 
-	displayUpdateStatus(updateStatus);
 	displayUpdateInfos(updateInfo);
+	displayUpdateStatus(updateStatus);
+}
+
+function displayUpdateInfos(updateInfo)
+{
+	const container = document.getElementById('update-components-container');
+	const columnTemplate = document.getElementById('update-component-column-template');
+	const cardTemplate = document.getElementById('update-component-instance-card-template');
+
+	if (!container || !columnTemplate || !cardTemplate)
+	{
+		console.error('Container or templates not found');
+		return;
+	}
+
+	// Clear existing components
+	container.innerHTML = '';
+
+	// Generate component columns from template
+	if (updateInfo.components && Array.isArray(updateInfo.components))
+	{
+		updateInfo.components.forEach(component =>
+		{
+			// Create column for this component
+			const columnClone = columnTemplate.content.cloneNode(true);
+			const columnTitle = columnClone.querySelector('.update-column-title');
+			const cardsContainer = columnClone.querySelector('.update-component-instance-card-container');
+
+			if (columnTitle)
+			{
+				columnTitle.textContent = component.name;
+			}
+
+			// Create a card for each current version
+			if (component.currentVersions && component.currentVersions.length > 0)
+			{
+				component.currentVersions.forEach((currentVersion, versionIndex) =>
+				{
+					const cardClone = cardTemplate.content.cloneNode(true);
+					const currentVersionElement = cardClone.querySelector('#update-component-instance-current-version');
+					const availableVersionElement = cardClone.querySelector('#update-component-instance-available-version');
+					const buttonStartUpdate = cardClone.querySelector('#btn-update-start');
+
+					if (currentVersionElement)
+					{
+						currentVersionElement.id = `update-component-instance-${component.name}-${versionIndex}-current-version`;
+						currentVersionElement.textContent = currentVersion;
+					}
+
+					if (availableVersionElement)
+					{
+						availableVersionElement.id = `update-component-instance-${component.name}-${versionIndex}-available-version`;
+						availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
+					}
+
+					if (buttonStartUpdate)
+					{
+						buttonStartUpdate.onclick = () => startUpdate(component.name, versionIndex);
+					}
+
+					cardsContainer.appendChild(cardClone);
+				});
+			}
+			else
+			{
+				// If no current versions, create one card with "-"
+				const cardClone = cardTemplate.content.cloneNode(true);
+				const currentVersionElement = cardClone.querySelector('#update-component-instance-current-version');
+				const availableVersionElement = cardClone.querySelector('#update-component-instance-available-version');
+				const buttonStartUpdate = cardClone.querySelector('#btn-update-start');
+
+				if (currentVersionElement)
+				{
+					currentVersionElement.id = `update-component-instance-${component.name}-none-current-version`;
+					currentVersionElement.textContent = '-';
+				}
+
+				if (availableVersionElement)
+				{
+					availableVersionElement.id = `update-component-instance-${component.name}-none-available-version`;
+					availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
+				}
+
+				if (buttonStartUpdate)
+				{
+					buttonStartUpdate.style.display = 'none'; // Hide update button if no current version
+				}
+
+				cardsContainer.appendChild(cardClone);
+			}
+
+			container.appendChild(columnClone);
+		});
+	}
 }
 
 function displayUpdateStatus(updateStatus)
@@ -99,61 +182,52 @@ function displayUpdateStatus(updateStatus)
 	}
 }
 
-function displayUpdateInfos(updateInfo)
-{
-	const part1CurrentVersion = document.getElementById('part1-current-version');
-	const part1AvailableVersion = document.getElementById('part1-available-version');
-
-	if (part1CurrentVersion) part1CurrentVersion.innerText = (updateInfo.part1.currentVersions && updateInfo.part1.currentVersions.length > 0) ? updateInfo.part1.currentVersions[0] : '-';
-	if (part1AvailableVersion) part1AvailableVersion.innerText = updateInfo.part1.available ? (updateInfo.part1.version || '-') : '?';
-
-	const part2CurrentVersion = document.getElementById('part2-current-version');
-	const part2AvailableVersion = document.getElementById('part2-available-version');
-
-	if (part2CurrentVersion) part2CurrentVersion.innerText = (updateInfo.part2.currentVersions && updateInfo.part2.currentVersions.length > 0) ? updateInfo.part2.currentVersions[0] : '-';
-	if (part2AvailableVersion) part2AvailableVersion.innerText = updateInfo.part2.available ? (updateInfo.part2.version || '-') : '?';
-
-	/*data.sensors.forEach(sensor => {
-		const el = document.createElement('div');
-		el.className = 'sensor-card';
-
-		el.innerHTML = `
-		<h3>${sensor.name}</h3>
-		<p>Aktuell: ${sensor.current}</p>
-		<p>Neu: ${sensor.available || '-'}</p>
-		<button onclick="updateSensor('${sensor.id}')">Update</button>
-		<div class="progress">
-			<div class="progress-bar" id="sensor-progress-${sensor.id}"></div>
-		</div>
-		`;
-
-		container.appendChild(el);
-	});*/
-}
-
 async function setUpdateChannel(channel)
 {
-  await fetch(`/update/set_channel?channel=${encodeURIComponent(channel)}`);
-  getUpdateStatusAndInfo();
+	await fetch(`/update/set_channel?channel=${encodeURIComponent(channel)}`);
+  	getUpdateStatusAndInfo();
 }
 
 async function checkUpdate()
 {
-  const updateStatusElement = document.getElementById('update_status');
-  if (updateStatusElement) updateStatusElement.innerText = 'Checking...';
+	const updateStatusElement = document.getElementById('update_status');
 
-  await fetch('/update/check');
+  	await fetch('/update/check')
+	.then(async response =>
+	{
+		updateStatusElement.innerText = await response.text();
+		if (response.ok)
+		{
+			let updateStatus;
+			do
+			{
+				await new Promise(resolve => setTimeout(resolve, 500));
+				const res = await fetch('/update/status');
+				updateStatus = await res.json();
+			}
+			while (updateStatus.isFetching);
 
-  let updateStatus;
-  do
-  {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const res = await fetch('/update/status');
-    updateStatus = await res.json();
-  }
-  while (updateStatus.isFetching);
+			await getUpdateStatusAndInfo();
 
-  await getUpdateStatusAndInfo();
+			if (updateStatusElement) updateStatusElement.innerText = 'Ready';
+		}
+	});
+}
 
-  if (updateStatusElement) updateStatusElement.innerText = 'Ready';
+async function startUpdate(componentName, componentIndex)
+{
+	try
+	{
+		const response = await fetch('/update/start?component=' + componentName + '&index=' + componentIndex);
+		const jsonRsp = await response.json();
+		const updateStatusElement = document.getElementById('update_status');
+		if (updateStatusElement)
+		{
+			updateStatusElement.innerText = jsonRsp.message;
+		}
+	}
+	catch (error)
+	{
+		console.error("Netzwerkfehler:", error);
+	}
 }

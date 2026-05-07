@@ -12,16 +12,6 @@
 
 void main_initWebserverEndpoints()
 {
-    server.on("/test", HTTP_GET, [](AsyncWebServerRequest *request)
-    {
-        DynamicJsonDocument doc(256);
-        doc["text"] = "Hello World Text";
-        doc["version"] = FW_VERSION;
-        String response;
-        serializeJson(doc, response);
-        request->send(200, "application/json", response);
-    });
-
     server.on("/eraseCredentials", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         // Send back the response before erasing the credentials, otherwise the client would not receive the response because the device restarts immediately after erasing the credentials

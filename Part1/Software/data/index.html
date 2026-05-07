@@ -14,15 +14,12 @@
 			<div id="SubHeading">Index Page</div>
 		</div>
 		
-		<h2 id="testText"></h2>
-		<div id="testVersion"></div>
-
-
+		<br>
 
 		<div class="update-container">
 			<!-- Common Status/Control Card -->
 			<div class="card update-common-card">
-				<h2>Allgemein</h2>
+				<h2>Update Übersicht</h2>
 
 				<div>
 					<p>Update-Kanal: <span id="update_channel">-</span></p>
@@ -30,50 +27,42 @@
 					<progress id="update_progress" max="100"></progress>
 				</div>
 
-				<div>
+				<div class="sensor-data-buttons">
 					<button onclick="setUpdateChannel('stable')">Set Channel Stable</button>
 					<button onclick="setUpdateChannel('dev')">Set Channel Dev</button>
-					<button onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+					<button class="icon-button" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
 				</div>
 			</div>
 
-			<!-- Two Columns -->
-			<div class="update-columns-container">
-				<!-- Part1 BLOCK -->
-				<div class="card update-part1-card" id="part1-card">
-					<h2>Part1</h2>
-
-					<div>
-						<p>Aktuell: <span id="part1-current-version">-</span></p>
-						<p>Neu: <span id="part1-available-version">-</span></p>
-					</div>
-
-					<div>
-						<form action="/update/start" method="get">
-							<input type="hidden" name="part" value="part1">
-							<button type="submit" title="Update Part1"><i class="material-symbols-outlined">upload</i></button>
-						</form>
-					</div>
-				</div>
-
-				<!-- Part2 BLOCK -->
-				<div class="card update-part2-card" id="part2-card">
-					<h2>Part2</h2>
-
-					<div>
-						<p>Aktuell: <span id="part2-current-version">-</span></p>
-						<p>Neu: <span id="part2-available-version">-</span></p>
-					</div>
-
-					<div>
-						<form action="/update/start" method="get">
-							<input type="hidden" name="part" value="part2">
-							<button type="submit" title="Update Part2"><i class="material-symbols-outlined">upload</i></button>
-						</form>
-					</div>
-				</div>
+			<!-- Components Container -->
+			<div class="update-components-container" id="update-components-container">
+				<!-- Components will be generated from template -->
 			</div>
 		</div>
+
+		<!-- Component Column Template -->
+		<template id="update-component-column-template">
+			<div class="update-component-column">
+				<h3 class="update-column-title"></h3>
+				<div class="update-component-instance-card-container">
+					<!-- Individual version cards will be added here -->
+				</div>
+			</div>
+		</template>
+
+		<!-- Component Instance Card Template -->
+		<template id="update-component-instance-card-template">
+			<div class="card update-component-instance-card">
+				<div class="update-version-grid">
+					<span class="update-version-label">Aktuell:</span> <span id="update-component-instance-current-version">-</span>
+					<span class="update-version-label">Neu:</span> <span id="update-component-instance-available-version">-</span>
+				</div>
+
+				<div class="update-card-actions">
+					<button type="button" id="btn-update-start" class="icon-button" title="Update component"><i class="material-symbols-outlined">upload</i></button>
+				</div>
+			</div>
+		</template>
 
 	</body>
 	<script src="index.js"></script>
