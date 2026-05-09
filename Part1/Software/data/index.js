@@ -1,3 +1,24 @@
+const UpdateChannel =
+{
+	STABLE: 0,
+	DEV: 1
+};
+
+const UpdateState =
+{
+	IDLE: 0,
+	CHECKING: 1,
+	UPDATING: 2,
+	RESTARTING: 3,
+	ERROR: 4
+};
+
+const UpdateStep =
+{
+	FW: 0,
+	FS: 1
+};
+
 let updateProgressSource = null;
 
 function bodyLoaded()
@@ -29,11 +50,14 @@ function initUpdateProgressEvents()
 	});
 	updateProgressSource.addEventListener('updateStatus', event =>
 	{
-		const updateStatus = event.data;
-		const updateStatusElement = document.getElementById('update_status');
-		if (updateStatusElement)
+		try
 		{
-			updateStatusElement.innerText = updateStatus;
+			const updateStatus = JSON.parse(event.data);
+			displayUpdateStatus(updateStatus);
+		}
+		catch (e)
+		{
+			console.error('Failed to parse updateStatus JSON:', e);
 		}
 	});
 	updateProgressSource.onerror = () =>
@@ -157,23 +181,49 @@ function displayUpdateStatus(updateStatus)
 
 	if (updateChannel)
 	{
-		updateChannel.innerText = updateStatus.channel || '-';
+		let channelText = 'Unknown';
+		if(updateStatus.channel === UpdateChannel.STABLE)
+		{
+			channelText = 'Stable';
+		}
+		else if(updateStatus.channel === UpdateChannel.DEV)
+		{
+			channelText = 'Dev';
+		}
+		updateChannel.innerText = channelText;
 	}
 
 	if (updateStatusElement)
 	{
-		if (updateStatus.isUpdating)
+		let statusText = 'Unknown';
+		switch (updateStatus.state)
 		{
-			updateStatusElement.innerText = 'Updating ' + updateStatus.updateStep;
+			case UpdateState.IDLE:
+				statusText = 'Ready';
+				break;
+			case UpdateState.CHECKING:
+				statusText = 'Checking for new versions';
+				break;
+			case UpdateState.UPDATING:
+				if (updateStatus.updateStep === UpdateStep.FW)
+				{
+					statusText = `Updating firmware of ${updateStatus.currentComponent}`;
+				}
+				else if (updateStatus.updateStep === UpdateStep.FS)
+				{
+					statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
+				}
+				break;
+			case UpdateState.RESTARTING:
+				statusText = 'Restarting device';
+				break;
+			case UpdateState.ERROR:
+				statusText = 'Error';
+				break;
+			default:
+				break;
 		}
-		else if (updateStatus.isFetching)
-		{
-			updateStatusElement.innerText = 'Fetching';
-		}
-		else
-		{
-			updateStatusElement.innerText = 'Idle';
-		}
+		updateStatusElement.innerText = statusText;
 	}
 
 	if (progressBar && typeof updateStatus.updateProgress === 'number')
@@ -190,12 +240,9 @@ async function setUpdateChannel(channel)
 
 async function checkUpdate()
 {
-	const updateStatusElement = document.getElementById('update_status');
-
   	await fetch('/update/check')
 	.then(async response =>
 	{
-		updateStatusElement.innerText = await response.text();
 		if (response.ok)
 		{
 			let updateStatus;
@@ -205,11 +252,9 @@ async function checkUpdate()
 				const res = await fetch('/update/status');
 				updateStatus = await res.json();
 			}
-			while (updateStatus.isFetching);
+			while (updateStatus.state === UpdateState.CHECKING);
 
 			await getUpdateStatusAndInfo();
-
-			if (updateStatusElement) updateStatusElement.innerText = 'Ready';
 		}
 	});
 }

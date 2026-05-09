@@ -45,7 +45,7 @@ update_info_t updateInfo_Part1;
 update_info_t updateInfo_Part2;
 update_info_t* updateInfos[] = { &updateInfo_Part1, &updateInfo_Part2 };
 
-const char* componentNames[] = { UPDATE_COMPONENT_PART1, UPDATE_COMPONENT_PART2 };
+const char* componentNames[] = { UPDATE_COMPONENT_NAME_PART1, UPDATE_COMPONENT_NAME_PART2 };
 
 // Current versions arrays for each component
 const char* currentVersionsPart1[] = { FW_VERSION };
@@ -53,6 +53,37 @@ const char* currentVersionsPart2[] = { "?", "?" };
 const char** currentVersionsArray[] = { currentVersionsPart1, currentVersionsPart2 };
 const size_t currentVersionsCounts[] = { sizeof(currentVersionsPart1) / sizeof(currentVersionsPart1[0]), 
                                         sizeof(currentVersionsPart2) / sizeof(currentVersionsPart2[0]) };
+
+bool requestNewVersionCheck = false;
+bool requestUpdate = false;
+
+/**********************************************************************/
+
+static void updateHandling_sendProgressEvent(float progress)
+{
+    String payload = String(progress, 2);
+    events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
+}
+
+static String updateHandling_getUpdateStatusJson(update_status_t &status)
+{
+    DynamicJsonDocument doc(512);
+    doc["channel"] = status.currentUpdateChannel;
+    doc["state"] = status.state;
+    doc["currentComponent"] = status.currentComponent;
+    doc["updateStep"] = status.updateStep;
+    doc["updateProgress"] = status.updateProgress;
+
+    String response;
+    serializeJson(doc, response);
+    return response;
+}
+
+static void updateHandling_sendUpdateStatusEvent()
+{
+    String response = updateHandling_getUpdateStatusJson(updateStatus);
+    events.send(response.c_str(), SERVER_EVENT_UPDATE_STATUS);
+}
 
 /**********************************************************************/
 
@@ -158,17 +189,6 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 /**********************************************************************/
 
-static void updateHandling_sendProgressEvent(float progress)
-{
-    String payload = String(progress, 2);
-    events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
-}
-
-static void updateHandling_sendStatusEvent(String status)
-{
-    events.send(status.c_str(), SERVER_EVENT_UPDATE_STATUS);
-}
-
 bool updateHandling_performUpdate(update_info_t &info)
 {
     if (!info.valid)
@@ -197,7 +217,6 @@ bool updateHandling_performUpdate(update_info_t &info)
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
 
-    updateStatus.isUpdating = true;
     updateStatus.updateStep = UPDATE_STEP_FW;
 
     static unsigned long lastProgressEventTime = 0;
@@ -257,7 +276,7 @@ bool updateHandling_performUpdate(update_info_t &info)
     if(info.has_fs_update)
     {
         updateStatus.updateStep = UPDATE_STEP_FS;
-        updateHandling_sendStatusEvent("Updating filesystem");
+        updateHandling_sendUpdateStatusEvent();
         #ifdef DEBUG_OUTPUT
             Serial.println("Update file system...");
         #endif
@@ -286,7 +305,7 @@ bool updateHandling_performUpdate(update_info_t &info)
     }
 
     bool fwUpdateResult = true;
-    updateHandling_sendStatusEvent("Updating firmware");
+    updateHandling_sendUpdateStatusEvent();
     #ifdef DEBUG_OUTPUT
         Serial.println("Update firmware...");
     #endif
@@ -315,7 +334,8 @@ bool updateHandling_performUpdate(update_info_t &info)
 
     if(fwUpdateResult)
     {
-        updateHandling_sendStatusEvent("Update completed. Restarting device...");
+        updateStatus.state = UPDATE_STATE_RESTARTING;
+        updateHandling_sendUpdateStatusEvent();
     
         // Wait for 2 seconds to ensure that the HTTP response is sent completely before restarting.
         // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
@@ -328,7 +348,8 @@ bool updateHandling_performUpdate(update_info_t &info)
     }
     else
     {
-        updateHandling_sendStatusEvent("Update failed");
+        updateStatus.state = UPDATE_STATE_ERROR;
+        updateHandling_sendUpdateStatusEvent();
     }
 
     return fsUpdateResult && fwUpdateResult;
@@ -353,11 +374,42 @@ void updateHandling_clearVersionInfos()
 
 /**********************************************************************/
 
+bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
+{
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("Looking for component \"%s\"...\n", componentName.c_str());
+    #endif
+
+    bool componentValid = false;
+    if(foundIndex != nullptr) { *foundIndex = -1; }
+    size_t count = sizeof(componentNames) / sizeof(componentNames[0]);
+    for (size_t i = 0; i < count; i++)
+    {
+        if (componentName == componentNames[i])
+        {
+            componentValid = true;
+            if(foundIndex != nullptr) { *foundIndex = i; }
+            if (foundUpdateInfo != nullptr)
+            {
+                *foundUpdateInfo = *updateInfos[i];
+            }
+
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("Found component \"%s\" at index %d\n", componentName.c_str(), i);
+            #endif
+            break;
+        }
+    }
+    return componentValid;
+}
+
+/**********************************************************************/
+
 void updateHandling_initWebserverEndpoints()
 {
     server.on("/update/set_channel", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        if(updateStatus.isFetchingNewestVersionInfos || updateStatus.isUpdating)
+        if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
         {
             request->send(400, "text/plain", "Cannot change update channel while fetching version infos or performing an update");
             return;
@@ -389,7 +441,7 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/check", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        if(updateStatus.isFetchingNewestVersionInfos || updateStatus.isUpdating)
+        if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
         {
             request->send(400, "text/plain", "Already fetching version infos or performing an update");
             return;
@@ -416,19 +468,25 @@ void updateHandling_initWebserverEndpoints()
             indexStr = request->getParam("index")->value();
         }
 
+        bool componentValid = updateHandling_findComponentByName(component);
+
         DynamicJsonDocument doc(512);
         int resultCode = 200;
-        if (component == "part1")
+        if (componentValid)
         {
-            updateHandling_startUpdate();
-            doc["status"] = "ok";
-            doc["message"] = "Update for part1 started";
-        }
-        else if (component == "part2")
-        {
-            doc["status"] = "error";
-            doc["message"] = "Update for part2 not supported";
-            resultCode = 400;
+#warning Update for part2 is currently not supported, because the update process is not yet implemented and tested.
+            if(component == UPDATE_COMPONENT_NAME_PART2)
+            {
+                doc["status"] = "error";
+                doc["message"] = "Update for " + component + " is currently not supported";
+                resultCode = 400;
+            }
+            else
+            {
+                updateHandling_startUpdate(component);
+                doc["status"] = "ok";
+                doc["message"] = "Update for " + component + " started";
+            }
         }
         else
         {
@@ -436,6 +494,7 @@ void updateHandling_initWebserverEndpoints()
             doc["message"] = "Invalid component \"" + component + "\"";
             resultCode = 400;
         }
+
         String response;
         serializeJson(doc, response);
         request->send(resultCode, "application/json", response);
@@ -443,15 +502,7 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        DynamicJsonDocument doc(512);
-        doc["channel"] = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev";
-        doc["isFetching"] = updateStatus.isFetchingNewestVersionInfos;
-        doc["isUpdating"] = updateStatus.isUpdating;
-        doc["updateStep"] = (updateStatus.updateStep == UPDATE_STEP_FW) ? "firmware" : "filesystem";
-        doc["updateProgress"] = updateStatus.updateProgress;
-
-        String response;
-        serializeJson(doc, response);
+        String response = updateHandling_getUpdateStatusJson(updateStatus);
         request->send(200, "application/json", response);
     });
 
@@ -491,21 +542,25 @@ void updateHandling_initWebserverEndpoints()
 void updateHandling_startFetchingNewestVersionInfos()
 {
     updateHandling_clearVersionInfos();
-    // Set flag to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
-    updateStatus.isFetchingNewestVersionInfos = true;
+    updateStatus.currentComponent = "";
+    // Set state to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
+    updateStatus.state = UPDATE_STATE_CHECKING;
+    updateHandling_sendUpdateStatusEvent();
 }
 
-void updateHandling_startUpdate()
-{    
-    // Set flag to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
-    updateStatus.isUpdating = true;
+void updateHandling_startUpdate(String component)
+{
+    updateStatus.currentComponent = component;
+    // Set state to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server or by performing the update itself, which can take a long time)
+    updateStatus.state = UPDATE_STATE_UPDATING;
+    updateHandling_sendUpdateStatusEvent();
 }
 
 /**********************************************************************/
 
 void updateHandling_loop()
 {
-    if(updateStatus.isFetchingNewestVersionInfos)
+    if(updateStatus.state == UPDATE_STATE_CHECKING)
     {
         size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
         updateHandling_fetchVersions(updateInfos, componentNames, count);
@@ -527,19 +582,17 @@ void updateHandling_loop()
                 }
             }
         #endif
-        updateStatus.isFetchingNewestVersionInfos = false;
+        updateStatus.state = UPDATE_STATE_IDLE;
+        updateHandling_sendUpdateStatusEvent();
     }
-    else if(updateStatus.isUpdating)
+    else if(updateStatus.state == UPDATE_STATE_UPDATING)
     {
-        if(!updateInfo_Part1.valid)
+        update_info_t currentUpdateInfo;
+        if(updateHandling_findComponentByName(updateStatus.currentComponent, &currentUpdateInfo, nullptr))
         {
-            // If no valid update info is available, fetch it first before trying to perform the update (e.g. in case the user directly clicks the "Start Update" button without first clicking the "Fetch Newest Version Infos" button in the web interface)
-            updateStatus.isFetchingNewestVersionInfos = true;
+            updateHandling_performUpdate(currentUpdateInfo);
         }
-        else
-        {
-            updateHandling_performUpdate(updateInfo_Part1);
-            updateStatus.isUpdating = false;
-        }
+        updateStatus.state = UPDATE_STATE_IDLE;
+        updateHandling_sendUpdateStatusEvent();
     }
 }

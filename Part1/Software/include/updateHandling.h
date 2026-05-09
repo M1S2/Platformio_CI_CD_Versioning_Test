@@ -10,22 +10,31 @@ enum UpdateChannel
     UPDATE_CHANNEL_DEV
 };
 
+enum UpdateState
+{
+    UPDATE_STATE_IDLE,
+    UPDATE_STATE_CHECKING,
+    UPDATE_STATE_UPDATING,
+    UPDATE_STATE_RESTARTING,
+    UPDATE_STATE_ERROR
+};
+
 enum UpdateStep
 {
     UPDATE_STEP_FW,
     UPDATE_STEP_FS
 };
 
-#define UPDATE_COMPONENT_PART1 "part1"
-#define UPDATE_COMPONENT_PART2 "part2"
+#define UPDATE_COMPONENT_NAME_PART1 "part1"
+#define UPDATE_COMPONENT_NAME_PART2 "part2"
 
 #define UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS  200     // Send the update progress to the web interface every x ms during an update
 
 typedef struct update_status
 {
     UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;     // Current update channel (stable or dev)
-    bool isFetchingNewestVersionInfos = false;  // This flag is true, when the device is currently fetching the newest version infos from the update server
-    bool isUpdating = false;                    // This flag is true, when the device is currently performing an update
+    UpdateState state = UPDATE_STATE_IDLE;      // Current state of the update handling
+    String currentComponent = "";               // Name of the component currently being updated (e.g. "part1" or "part2")
     UpdateStep updateStep = UPDATE_STEP_FW;     // Current step of the update process (firmware update or filesystem update)
     float updateProgress = 0.0f;                // Progress of the current or last firmware and filesystem update (0.0 to 100.0)
 } update_status_t;
@@ -49,6 +58,6 @@ extern update_info_t updateInfo_Part2;
 void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();
 void updateHandling_startFetchingNewestVersionInfos();
-void updateHandling_startUpdate();
+void updateHandling_startUpdate(String component);
 
 #endif
