@@ -71,6 +71,7 @@ static String updateHandling_getUpdateStatusJson(update_status_t &status)
     doc["channel"] = status.currentUpdateChannel;
     doc["state"] = status.state;
     doc["currentComponent"] = status.currentComponent;
+    doc["currentComponentInstanceIndex"] = status.currentComponentInstanceIndex;
     doc["updateStep"] = status.updateStep;
     doc["updateProgress"] = status.updateProgress;
 
@@ -189,8 +190,10 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 /**********************************************************************/
 
-bool updateHandling_performUpdate(update_info_t &info)
+bool updateHandling_performUpdate(update_info_t &info, String component = "", int componentInstanceIndex = -1)
 {
+#warning component and componentInstanceIndex are currently not really used...
+
     if (!info.valid)
     {
         #ifdef DEBUG_OUTPUT
@@ -208,7 +211,7 @@ bool updateHandling_performUpdate(update_info_t &info)
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.printf("Performing update for component %s to version %s\n", info.componentName.c_str(), info.version.c_str());
+        Serial.printf("Performing update for component %s, index %d to version %s\n", component.c_str(), componentInstanceIndex, info.version.c_str());
     #endif
 
     WiFiClientSecure client;
@@ -461,11 +464,12 @@ void updateHandling_initWebserverEndpoints()
             component = request->getParam("component")->value();
         }
         
-#warning Currently the index parameter is not used.
-        String indexStr = "";
-        if(request->hasParam("index"))
+        String componentInstanceIndexStr = "";
+        int componentInstanceIndex = -1;
+        if(request->hasParam("componentInstanceIndex"))
         {
-            indexStr = request->getParam("index")->value();
+            componentInstanceIndexStr = request->getParam("componentInstanceIndex")->value();
+            componentInstanceIndex = componentInstanceIndexStr.toInt();
         }
 
         bool componentValid = updateHandling_findComponentByName(component);
@@ -483,9 +487,9 @@ void updateHandling_initWebserverEndpoints()
             }
             else
             {
-                updateHandling_startUpdate(component);
+                updateHandling_startUpdate(component, componentInstanceIndex);
                 doc["status"] = "ok";
-                doc["message"] = "Update for " + component + " started";
+                doc["message"] = "Update for " + component + ", index " + componentInstanceIndexStr + " started";
             }
         }
         else
@@ -548,9 +552,10 @@ void updateHandling_startFetchingNewestVersionInfos()
     updateHandling_sendUpdateStatusEvent();
 }
 
-void updateHandling_startUpdate(String component)
+void updateHandling_startUpdate(String component, int componentInstanceIndex)
 {
     updateStatus.currentComponent = component;
+    updateStatus.currentComponentInstanceIndex = componentInstanceIndex;
     // Set state to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server or by performing the update itself, which can take a long time)
     updateStatus.state = UPDATE_STATE_UPDATING;
     updateHandling_sendUpdateStatusEvent();
@@ -590,7 +595,7 @@ void updateHandling_loop()
         update_info_t currentUpdateInfo;
         if(updateHandling_findComponentByName(updateStatus.currentComponent, &currentUpdateInfo, nullptr))
         {
-            updateHandling_performUpdate(currentUpdateInfo);
+            updateHandling_performUpdate(currentUpdateInfo, updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
         }
         updateStatus.state = UPDATE_STATE_IDLE;
         updateHandling_sendUpdateStatusEvent();

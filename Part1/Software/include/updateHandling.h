@@ -35,6 +35,7 @@ typedef struct update_status
     UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;     // Current update channel (stable or dev)
     UpdateState state = UPDATE_STATE_IDLE;      // Current state of the update handling
     String currentComponent = "";               // Name of the component currently being updated (e.g. "part1" or "part2")
+    int currentComponentInstanceIndex = -1;     // Index of the component instance currently being updated
     UpdateStep updateStep = UPDATE_STEP_FW;     // Current step of the update process (firmware update or filesystem update)
     float updateProgress = 0.0f;                // Progress of the current or last firmware and filesystem update (0.0 to 100.0)
 } update_status_t;
@@ -58,6 +59,6 @@ extern update_info_t updateInfo_Part2;
 void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();
 void updateHandling_startFetchingNewestVersionInfos();
-void updateHandling_startUpdate(String component);
+void updateHandling_startUpdate(String component, int componentInstanceIndex);
 
 #endif

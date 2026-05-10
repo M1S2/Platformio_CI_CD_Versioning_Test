@@ -30,7 +30,11 @@
 				<div class="sensor-data-buttons">
 					<button onclick="setUpdateChannel('stable')">Set Channel Stable</button>
 					<button onclick="setUpdateChannel('dev')">Set Channel Dev</button>
-					<button class="icon-button" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+
+					<div class="loader-button-wrapper">
+						<span class="loader" id="loader-btn-check-update" style="display: none;"></span>
+						<button class="icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+					</div>
 				</div>
 			</div>
 
@@ -59,7 +63,10 @@
 				</div>
 
 				<div class="update-card-actions">
-					<button type="button" id="btn-update-start" class="icon-button" title="Update component"><i class="material-symbols-outlined">upload</i></button>
+					<div class="loader-button-wrapper">
+						<span class="loader" id="loader-btn-update-start" style="display: none;"></span>
+						<button type="button" id="btn-update-start" class="icon-button" title="Update component"><i class="material-symbols-outlined">upload</i></button>
+					</div>
 				</div>
 			</div>
 		</template>

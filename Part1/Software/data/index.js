@@ -21,12 +21,16 @@ const UpdateStep =
 
 let updateProgressSource = null;
 
+/**********************************************************************/
+
 function bodyLoaded()
 {
 	initUpdateProgressEvents();
 	getUpdateStatusAndInfo();
 	checkUpdate();
 }
+
+/**********************************************************************/
 
 function initUpdateProgressEvents()
 {
@@ -66,6 +70,8 @@ function initUpdateProgressEvents()
 	};
 }
 
+/**********************************************************************/
+
 async function getUpdateStatusAndInfo()
 {
 	const [statusRes, infoRes] = await Promise.all([
@@ -79,6 +85,8 @@ async function getUpdateStatusAndInfo()
 	displayUpdateInfos(updateInfo);
 	displayUpdateStatus(updateStatus);
 }
+
+/**********************************************************************/
 
 function displayUpdateInfos(updateInfo)
 {
@@ -100,84 +108,65 @@ function displayUpdateInfos(updateInfo)
 	{
 		updateInfo.components.forEach(component =>
 		{
+			// If no current versions are available, skip this component
+			if (!component.currentVersions || component.currentVersions.length === 0)
+			{
+				return;	// Acts like continue; for the .forEach() loop.
+			}
+
 			// Create column for this component
 			const columnClone = columnTemplate.content.cloneNode(true);
 			const columnTitle = columnClone.querySelector('.update-column-title');
 			const cardsContainer = columnClone.querySelector('.update-component-instance-card-container');
 
-			if (columnTitle)
-			{
-				columnTitle.textContent = component.name;
-			}
+			if (columnTitle) columnTitle.textContent = component.name;
 
 			// Create a card for each current version
-			if (component.currentVersions && component.currentVersions.length > 0)
+			component.currentVersions.forEach((currentVersion, versionIndex) =>
 			{
-				component.currentVersions.forEach((currentVersion, versionIndex) =>
-				{
-					const cardClone = cardTemplate.content.cloneNode(true);
-					const currentVersionElement = cardClone.querySelector('#update-component-instance-current-version');
-					const availableVersionElement = cardClone.querySelector('#update-component-instance-available-version');
-					const buttonStartUpdate = cardClone.querySelector('#btn-update-start');
-
-					if (currentVersionElement)
-					{
-						currentVersionElement.id = `update-component-instance-${component.name}-${versionIndex}-current-version`;
-						currentVersionElement.textContent = currentVersion;
-					}
-
-					if (availableVersionElement)
-					{
-						availableVersionElement.id = `update-component-instance-${component.name}-${versionIndex}-available-version`;
-						availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
-					}
-
-					if (buttonStartUpdate)
-					{
-						buttonStartUpdate.onclick = () => startUpdate(component.name, versionIndex);
-					}
-
-					cardsContainer.appendChild(cardClone);
-				});
-			}
-			else
-			{
-				// If no current versions, create one card with "-"
 				const cardClone = cardTemplate.content.cloneNode(true);
 				const currentVersionElement = cardClone.querySelector('#update-component-instance-current-version');
 				const availableVersionElement = cardClone.querySelector('#update-component-instance-available-version');
 				const buttonStartUpdate = cardClone.querySelector('#btn-update-start');
+				const loaderBtnStartUpdate = cardClone.querySelector('#loader-btn-update-start');
 
 				if (currentVersionElement)
 				{
-					currentVersionElement.id = `update-component-instance-${component.name}-none-current-version`;
-					currentVersionElement.textContent = '-';
+					currentVersionElement.id = `update-component-instance-current-version_${component.name}_${versionIndex}`;
+					currentVersionElement.textContent = currentVersion;
 				}
 
 				if (availableVersionElement)
 				{
-					availableVersionElement.id = `update-component-instance-${component.name}-none-available-version`;
+					availableVersionElement.id = `update-component-instance-available-version_${component.name}_${versionIndex}`;
 					availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
 				}
 
 				if (buttonStartUpdate)
 				{
-					buttonStartUpdate.style.display = 'none'; // Hide update button if no current version
+					buttonStartUpdate.id = `btn-update-start_${component.name}_${versionIndex}`;
+					buttonStartUpdate.onclick = () => startUpdate(component.name, versionIndex);
 				}
 
-				cardsContainer.appendChild(cardClone);
-			}
+				if (loaderBtnStartUpdate) loaderBtnStartUpdate.id = `loader-btn-update-start_${component.name}_${versionIndex}`;
 
+				cardsContainer.appendChild(cardClone);
+			});
 			container.appendChild(columnClone);
 		});
 	}
 }
+
+/**********************************************************************/
 
 function displayUpdateStatus(updateStatus)
 {
 	const updateStatusElement = document.getElementById('update_status');
 	const updateChannel = document.getElementById('update_channel');
 	const progressBar = document.getElementById('update_progress');
+
+	const btnCheckUpdate = document.getElementById('btn-check-update');
+	const loaderBtnCheckUpdate = document.getElementById('loader-btn-check-update');
 
 	if (updateChannel)
 	{
@@ -193,38 +182,58 @@ function displayUpdateStatus(updateStatus)
 		updateChannel.innerText = channelText;
 	}
 
-	if (updateStatusElement)
+	let statusText = 'Unknown';
+	let isChecking = false;
+	let isUpdating = false;
+	switch (updateStatus.state)
 	{
-		let statusText = 'Unknown';
-		switch (updateStatus.state)
-		{
-			case UpdateState.IDLE:
-				statusText = 'Ready';
-				break;
-			case UpdateState.CHECKING:
-				statusText = 'Checking for new versions';
-				break;
-			case UpdateState.UPDATING:
-				if (updateStatus.updateStep === UpdateStep.FW)
-				{
-					statusText = `Updating firmware of ${updateStatus.currentComponent}`;
-				}
-				else if (updateStatus.updateStep === UpdateStep.FS)
-				{
-					statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
-				}
-				break;
-			case UpdateState.RESTARTING:
-				statusText = 'Restarting device';
-				break;
-			case UpdateState.ERROR:
-				statusText = 'Error';
-				break;
-			default:
-				break;
-		}
-		updateStatusElement.innerText = statusText;
+		case UpdateState.IDLE:
+			statusText = 'Ready';
+			break;
+		case UpdateState.CHECKING:
+			statusText = 'Checking for new versions';
+			isChecking = true;
+			break;
+		case UpdateState.UPDATING:
+			if (updateStatus.updateStep === UpdateStep.FW)
+			{
+				statusText = `Updating firmware of ${updateStatus.currentComponent}`;
+			}
+			else if (updateStatus.updateStep === UpdateStep.FS)
+			{
+				statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
+			}
+			isUpdating = true;
+			break;
+		case UpdateState.RESTARTING:
+			statusText = 'Restarting device';
+			isUpdating = true;
+			break;
+		case UpdateState.ERROR:
+			statusText = 'Error';
+			break;
+		default:
+			break;
 	}
+	if(updateStatusElement) updateStatusElement.innerText = statusText;
+	if(btnCheckUpdate) btnCheckUpdate.disabled = isChecking || isUpdating;
+	if(loaderBtnCheckUpdate) loaderBtnCheckUpdate.style.display = isChecking ? 'inline-block' : 'none';
+
+	// Handle dynamic component update buttons and loaders by ID prefix
+	const componentUpdateButtons = document.querySelectorAll('[id^="btn-update-start_"]');
+	componentUpdateButtons.forEach(btn =>
+	{
+		btn.disabled = isChecking || isUpdating;
+	});
+	const componentUpdateLoaders = document.querySelectorAll('[id^="loader-btn-update-start_"]');
+	componentUpdateLoaders.forEach(loader =>
+	{
+		// Check, if this loader is part of the current component
+		const isCurrentActiveLoader = isUpdating &&
+									  updateStatus.currentComponent &&
+									  loader.id.startsWith(`loader-btn-update-start_${updateStatus.currentComponent}_${updateStatus.currentComponentInstanceIndex}`);
+		loader.style.display = isCurrentActiveLoader ? 'inline-block' : 'none';
+	});
 
 	if (progressBar && typeof updateStatus.updateProgress === 'number')
 	{
@@ -232,11 +241,15 @@ function displayUpdateStatus(updateStatus)
 	}
 }
 
+/**********************************************************************/
+
 async function setUpdateChannel(channel)
 {
 	await fetch(`/update/set_channel?channel=${encodeURIComponent(channel)}`);
   	getUpdateStatusAndInfo();
 }
+
+/**********************************************************************/
 
 async function checkUpdate()
 {
@@ -259,16 +272,18 @@ async function checkUpdate()
 	});
 }
 
-async function startUpdate(componentName, componentIndex)
+/**********************************************************************/
+
+async function startUpdate(componentName, componentInstanceIndex)
 {
 	try
 	{
-		const response = await fetch('/update/start?component=' + componentName + '&index=' + componentIndex);
+		const response = await fetch('/update/start?component=' + componentName + '&componentInstanceIndex=' + componentInstanceIndex);
 		const jsonRsp = await response.json();
 		const updateStatusElement = document.getElementById('update_status');
-		if (updateStatusElement)
+		if (updateStatusElement && jsonRsp.status === 'error')
 		{
-			updateStatusElement.innerText = jsonRsp.message;
+			updateStatusElement.innerText = 'Error: ' + jsonRsp.message;
 		}
 	}
 	catch (error)
