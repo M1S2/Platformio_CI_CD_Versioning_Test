@@ -1,0 +1,177 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
+#include <ArduinoJson.h>
+#include "updateHandling_Part1.h"
+#include "timeHandling.h"
+#include "certs.h"
+
+/**********************************************************************/
+
+bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String component = "", int componentInstanceIndex = -1)
+{
+#warning componentInstanceIndex is currently not really used...
+
+    if (!updateInfo.valid)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("No valid update info available");
+        #endif
+        return false;
+    }
+
+    if(isTimeValid == false)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+        #endif
+        return false;
+    }
+
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("Performing update for component %s, index %d to version %s\n", component.c_str(), componentInstanceIndex, updateInfo.version.c_str());
+    #endif
+
+    WiFiClientSecure client;
+    client.setTrustAnchors(&certList);
+
+    ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    ESPhttpUpdate.setClientTimeout(10000);
+
+    updateStatus.updateStep = UPDATE_STEP_FW;
+
+    static unsigned long lastProgressEventTime = 0;
+
+    ESPhttpUpdate.onStart([&updateInfo]()
+    {
+        if (!updateInfo.has_fs_update || (updateInfo.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FS))
+        {
+            updateStatus.updateProgress = 0.0f;
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
+        }
+    });
+    ESPhttpUpdate.onEnd([&updateInfo]()
+    {
+        if (!updateInfo.has_fs_update || (updateInfo.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FW))
+        {
+            updateStatus.updateProgress = 100.0f;
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
+        }
+    });
+    ESPhttpUpdate.onProgress([&updateInfo](int cur, int total)
+    {        
+        float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("Progress: %d / %d (%.2f%%)\n", cur, total, percent);
+        #endif
+        if(!updateInfo.has_fs_update)
+        {
+            updateStatus.updateProgress = percent;
+        }
+        else
+        {
+            if(updateStatus.updateStep == UPDATE_STEP_FS)
+            {
+                // First half of the update progress is for the filesystem update, which is performed before the firmware update.
+                updateStatus.updateProgress = percent * 0.5f;
+            }
+            else
+            {
+                // Second half of the update progress is for the firmware update, which is performed after the filesystem update.
+                updateStatus.updateProgress = 50.0f + (percent * 0.5f);
+            }
+        }
+        
+        // Send event only every UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS
+        unsigned long currentTime = millis();
+        if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS)
+        {
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
+            lastProgressEventTime = currentTime;
+        }
+        
+        yield(); // Yield to allow other tasks to run (e.g. webserver)
+    });
+
+    bool fsUpdateResult = true;
+    if(updateInfo.has_fs_update)
+    {
+        updateStatus.updateStep = UPDATE_STEP_FS;
+        updateHandling_sendUpdateStatusEvent();
+        #ifdef DEBUG_OUTPUT
+            Serial.println("Update file system...");
+        #endif
+        ESPhttpUpdate.setMD5sum(updateInfo.fs_md5);
+        t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(client, updateInfo.url_fs);
+        switch (returnFsUpdate)
+        {
+            case HTTP_UPDATE_FAILED:
+                #ifdef DEBUG_OUTPUT
+                    Serial.printf("FS Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
+                #endif
+                break;
+            case HTTP_UPDATE_NO_UPDATES:
+                #ifdef DEBUG_OUTPUT    
+                    Serial.println("No FS update available");
+                #endif
+                break;
+            case HTTP_UPDATE_OK:
+                #ifdef DEBUG_OUTPUT    
+                    Serial.println("FS Update ok");
+                #endif
+                break;
+        }
+        fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
+        updateStatus.updateStep = UPDATE_STEP_FW;
+    }
+
+    bool fwUpdateResult = true;
+    updateHandling_sendUpdateStatusEvent();
+    #ifdef DEBUG_OUTPUT
+        Serial.println("Update firmware...");
+    #endif
+    ESPhttpUpdate.setMD5sum(updateInfo.fw_md5);
+    ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
+    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(client, updateInfo.url_fw);
+    switch (returnFwUpdate)
+    {
+        case HTTP_UPDATE_FAILED:
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
+            #endif
+            break;
+        case HTTP_UPDATE_NO_UPDATES:
+            #ifdef DEBUG_OUTPUT    
+                Serial.println("No update available");
+            #endif
+            break;
+        case HTTP_UPDATE_OK:
+            #ifdef DEBUG_OUTPUT    
+                Serial.println("Update ok");
+            #endif
+            break;
+    }
+    fwUpdateResult = (returnFwUpdate == HTTP_UPDATE_OK);
+
+    if(fwUpdateResult)
+    {
+        updateStatus.state = UPDATE_STATE_RESTARTING;
+        updateHandling_sendUpdateStatusEvent();
+    
+        // Wait for 2 seconds to ensure that the HTTP response is sent completely before restarting.
+        // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
+        unsigned long start = millis();
+        while (millis() - start < 3000)
+        {
+            yield();
+        }
+        ESP.restart();
+    }
+    else
+    {
+        updateStatus.state = UPDATE_STATE_ERROR;
+        updateHandling_sendUpdateStatusEvent();
+    }
+
+    return fsUpdateResult && fwUpdateResult;
+}

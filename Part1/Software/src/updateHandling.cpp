@@ -7,6 +7,7 @@
 #include "timeHandling.h"
 #include "certs.h"
 #include "version.h"
+#include "updateHandling_Part1.h"
 
 const char* stableBaseUrl = "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/";
 const char* devBaseUrl = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/";
@@ -37,7 +38,7 @@ Dev Manifest Format:
 */
 
 // Create a list of certificates with the server certificate
-X509List cert(ROOT_CA_CERT);
+X509List certList(ROOT_CA_CERT);
 
 update_status_t updateStatus;
 
@@ -59,13 +60,13 @@ bool requestUpdate = false;
 
 /**********************************************************************/
 
-static void updateHandling_sendProgressEvent(float progress)
+void updateHandling_sendProgressEvent(float progress)
 {
     String payload = String(progress, 2);
     events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
 }
 
-static String updateHandling_getUpdateStatusJson(update_status_t &status)
+String updateHandling_getUpdateStatusJson(update_status_t &status)
 {
     DynamicJsonDocument doc(512);
     doc["channel"] = status.currentUpdateChannel;
@@ -80,10 +81,41 @@ static String updateHandling_getUpdateStatusJson(update_status_t &status)
     return response;
 }
 
-static void updateHandling_sendUpdateStatusEvent()
+void updateHandling_sendUpdateStatusEvent()
 {
     String response = updateHandling_getUpdateStatusJson(updateStatus);
     events.send(response.c_str(), SERVER_EVENT_UPDATE_STATUS);
+}
+
+/**********************************************************************/
+
+bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
+{
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("Looking for component \"%s\"...\n", componentName.c_str());
+    #endif
+
+    bool componentValid = false;
+    if(foundIndex != nullptr) { *foundIndex = -1; }
+    size_t count = sizeof(componentNames) / sizeof(componentNames[0]);
+    for (size_t i = 0; i < count; i++)
+    {
+        if (componentName == componentNames[i])
+        {
+            componentValid = true;
+            if(foundIndex != nullptr) { *foundIndex = i; }
+            if (foundUpdateInfo != nullptr)
+            {
+                *foundUpdateInfo = *updateInfos[i];
+            }
+
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("Found component \"%s\" at index %d\n", componentName.c_str(), i);
+            #endif
+            break;
+        }
+    }
+    return componentValid;
 }
 
 /**********************************************************************/
@@ -111,7 +143,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     #endif
 
     WiFiClientSecure client;
-    client.setTrustAnchors(&cert);
+    client.setTrustAnchors(&certList);
 
     HTTPClient http;
     http.setTimeout(10000); // 10 Seconds
@@ -190,172 +222,28 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 /**********************************************************************/
 
-bool updateHandling_performUpdate(update_info_t &info, String component = "", int componentInstanceIndex = -1)
+bool updateHandling_performUpdate(String component = "", int componentInstanceIndex = -1)
 {
-#warning component and componentInstanceIndex are currently not really used...
-
-    if (!info.valid)
+    update_info_t updateInfo;
+    if(!updateHandling_findComponentByName(component, &updateInfo, nullptr))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("No valid update info available");
+            Serial.printf("No update info found for component \"%s\"\n", component.c_str());
         #endif
         return false;
     }
 
-    if(isTimeValid == false)
+    if(component == UPDATE_COMPONENT_NAME_PART1)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
-        #endif
-        return false;
-    }
-
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("Performing update for component %s, index %d to version %s\n", component.c_str(), componentInstanceIndex, info.version.c_str());
-    #endif
-
-    WiFiClientSecure client;
-    client.setTrustAnchors(&cert);
-
-    ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    ESPhttpUpdate.setClientTimeout(10000);
-
-    updateStatus.updateStep = UPDATE_STEP_FW;
-
-    static unsigned long lastProgressEventTime = 0;
-
-    ESPhttpUpdate.onStart([&info]()
-    {
-        if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FS))
-        {
-            updateStatus.updateProgress = 0.0f;
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
-        }
-    });
-    ESPhttpUpdate.onEnd([&info]()
-    {
-        if (!info.has_fs_update || (info.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FW))
-        {
-            updateStatus.updateProgress = 100.0f;
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
-        }
-    });
-    ESPhttpUpdate.onProgress([&info](int cur, int total)
-    {        
-        float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
-        #ifdef DEBUG_OUTPUT
-            Serial.printf("Progress: %d / %d (%.2f%%)\n", cur, total, percent);
-        #endif
-        if(!info.has_fs_update)
-        {
-            updateStatus.updateProgress = percent;
-        }
-        else
-        {
-            if(updateStatus.updateStep == UPDATE_STEP_FS)
-            {
-                // First half of the update progress is for the filesystem update, which is performed before the firmware update.
-                updateStatus.updateProgress = percent * 0.5f;
-            }
-            else
-            {
-                // Second half of the update progress is for the firmware update, which is performed after the filesystem update.
-                updateStatus.updateProgress = 50.0f + (percent * 0.5f);
-            }
-        }
-        
-        // Send event only every UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS
-        unsigned long currentTime = millis();
-        if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS)
-        {
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
-            lastProgressEventTime = currentTime;
-        }
-        
-        yield(); // Yield to allow other tasks to run (e.g. webserver)
-    });
-
-    bool fsUpdateResult = true;
-    if(info.has_fs_update)
-    {
-        updateStatus.updateStep = UPDATE_STEP_FS;
-        updateHandling_sendUpdateStatusEvent();
-        #ifdef DEBUG_OUTPUT
-            Serial.println("Update file system...");
-        #endif
-        ESPhttpUpdate.setMD5sum(info.fs_md5);
-        t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(client, info.url_fs);
-        switch (returnFsUpdate)
-        {
-            case HTTP_UPDATE_FAILED:
-                #ifdef DEBUG_OUTPUT
-                    Serial.printf("FS Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
-                #endif
-                break;
-            case HTTP_UPDATE_NO_UPDATES:
-                #ifdef DEBUG_OUTPUT    
-                    Serial.println("No FS update available");
-                #endif
-                break;
-            case HTTP_UPDATE_OK:
-                #ifdef DEBUG_OUTPUT    
-                    Serial.println("FS Update ok");
-                #endif
-                break;
-        }
-        fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
-        updateStatus.updateStep = UPDATE_STEP_FW;
-    }
-
-    bool fwUpdateResult = true;
-    updateHandling_sendUpdateStatusEvent();
-    #ifdef DEBUG_OUTPUT
-        Serial.println("Update firmware...");
-    #endif
-    ESPhttpUpdate.setMD5sum(info.fw_md5);
-    ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
-    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(client, info.url_fw);
-    switch (returnFwUpdate)
-    {
-        case HTTP_UPDATE_FAILED:
-            #ifdef DEBUG_OUTPUT
-                Serial.printf("Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
-            #endif
-            break;
-        case HTTP_UPDATE_NO_UPDATES:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println("No update available");
-            #endif
-            break;
-        case HTTP_UPDATE_OK:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println("Update ok");
-            #endif
-            break;
-    }
-    fwUpdateResult = (returnFwUpdate == HTTP_UPDATE_OK);
-
-    if(fwUpdateResult)
-    {
-        updateStatus.state = UPDATE_STATE_RESTARTING;
-        updateHandling_sendUpdateStatusEvent();
-    
-        // Wait for 2 seconds to ensure that the HTTP response is sent completely before restarting.
-        // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
-        unsigned long start = millis();
-        while (millis() - start < 3000)
-        {
-            yield();
-        }
-        ESP.restart();
+        return updateHandling_performUpdatePart1(updateInfo, component, componentInstanceIndex);
     }
     else
     {
-        updateStatus.state = UPDATE_STATE_ERROR;
-        updateHandling_sendUpdateStatusEvent();
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("Update for component \"%s\" not supported\n", component.c_str());
+        #endif
+        return false;
     }
-
-    return fsUpdateResult && fwUpdateResult;
 }
 
 /**********************************************************************/
@@ -373,37 +261,6 @@ void updateHandling_clearVersionInfos()
         updateInfos[i]->fs_md5 = "";
         updateInfos[i]->has_fs_update = false;
     }
-}
-
-/**********************************************************************/
-
-bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
-{
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("Looking for component \"%s\"...\n", componentName.c_str());
-    #endif
-
-    bool componentValid = false;
-    if(foundIndex != nullptr) { *foundIndex = -1; }
-    size_t count = sizeof(componentNames) / sizeof(componentNames[0]);
-    for (size_t i = 0; i < count; i++)
-    {
-        if (componentName == componentNames[i])
-        {
-            componentValid = true;
-            if(foundIndex != nullptr) { *foundIndex = i; }
-            if (foundUpdateInfo != nullptr)
-            {
-                *foundUpdateInfo = *updateInfos[i];
-            }
-
-            #ifdef DEBUG_OUTPUT
-                Serial.printf("Found component \"%s\" at index %d\n", componentName.c_str(), i);
-            #endif
-            break;
-        }
-    }
-    return componentValid;
 }
 
 /**********************************************************************/
@@ -472,25 +329,14 @@ void updateHandling_initWebserverEndpoints()
             componentInstanceIndex = componentInstanceIndexStr.toInt();
         }
 
-        bool componentValid = updateHandling_findComponentByName(component);
-
         DynamicJsonDocument doc(512);
         int resultCode = 200;
+        bool componentValid = updateHandling_findComponentByName(component);
         if (componentValid)
         {
-#warning Update for part2 is currently not supported, because the update process is not yet implemented and tested.
-            if(component == UPDATE_COMPONENT_NAME_PART2)
-            {
-                doc["status"] = "error";
-                doc["message"] = "Update for " + component + " is currently not supported";
-                resultCode = 400;
-            }
-            else
-            {
-                updateHandling_startUpdate(component, componentInstanceIndex);
-                doc["status"] = "ok";
-                doc["message"] = "Update for " + component + ", index " + componentInstanceIndexStr + " started";
-            }
+            updateHandling_startUpdate(component, componentInstanceIndex);
+            doc["status"] = "ok";
+            doc["message"] = "Update for " + component + ", index " + componentInstanceIndexStr + " started";
         }
         else
         {
@@ -568,36 +414,39 @@ void updateHandling_loop()
     if(updateStatus.state == UPDATE_STATE_CHECKING)
     {
         size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
-        updateHandling_fetchVersions(updateInfos, componentNames, count);
+        bool result = updateHandling_fetchVersions(updateInfos, componentNames, count);
 
         #ifdef DEBUG_OUTPUT
-            for(size_t i = 0; i < count; ++i)
+            if(result)
             {
-                update_info_t &info = *updateInfos[i];
-                Serial.printf("Component: %s\n", info.componentName.c_str());
-                Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
-                Serial.printf("  Version: %s\n", info.version.c_str());
-                Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
-                Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
-                Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
-                if(info.has_fs_update)
+                for(size_t i = 0; i < count; ++i)
                 {
-                    Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
-                    Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                    update_info_t &info = *updateInfos[i];
+                    Serial.printf("Component: %s\n", info.componentName.c_str());
+                    Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
+                    Serial.printf("  Version: %s\n", info.version.c_str());
+                    Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
+                    Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
+                    Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
+                    if(info.has_fs_update)
+                    {
+                        Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
+                        Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                    }
                 }
             }
+            else
+            {
+                Serial.println("Fetching version infos failed");
+            }
         #endif
-        updateStatus.state = UPDATE_STATE_IDLE;
+        updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
         updateHandling_sendUpdateStatusEvent();
     }
     else if(updateStatus.state == UPDATE_STATE_UPDATING)
     {
-        update_info_t currentUpdateInfo;
-        if(updateHandling_findComponentByName(updateStatus.currentComponent, &currentUpdateInfo, nullptr))
-        {
-            updateHandling_performUpdate(currentUpdateInfo, updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
-        }
-        updateStatus.state = UPDATE_STATE_IDLE;
+        bool result = updateHandling_performUpdate(updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
+        updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
         updateHandling_sendUpdateStatusEvent();
     }
 }

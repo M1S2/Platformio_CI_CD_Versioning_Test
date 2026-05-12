@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "config.h"
 
+extern X509List certList;
+
 enum UpdateChannel
 {
     UPDATE_CHANNEL_STABLE,
@@ -60,5 +62,8 @@ void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();
 void updateHandling_startFetchingNewestVersionInfos();
 void updateHandling_startUpdate(String component, int componentInstanceIndex);
+
+void updateHandling_sendProgressEvent(float progress);
+void updateHandling_sendUpdateStatusEvent();
 
 #endif
