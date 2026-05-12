@@ -8,6 +8,7 @@
 #include "certs.h"
 #include "version.h"
 #include "updateHandling_Part1.h"
+#include "updateHandling_Part2.h"
 
 const char* stableBaseUrl = "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/";
 const char* devBaseUrl = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/";
@@ -237,6 +238,10 @@ bool updateHandling_performUpdate(String component = "", int componentInstanceIn
     {
         return updateHandling_performUpdatePart1(updateInfo, component, componentInstanceIndex);
     }
+    else if(component == UPDATE_COMPONENT_NAME_PART2)
+    {
+        return updateHandling_performUpdatePart2(updateInfo, component, componentInstanceIndex);
+    }
     else
     {
         #ifdef DEBUG_OUTPUT
@@ -385,6 +390,8 @@ void updateHandling_initWebserverEndpoints()
         serializeJson(doc, response);
         request->send(200, "application/json", response);
     });
+
+    updateHandling_initWebserverEndpoints_Part2();
 }
 
 /**********************************************************************/

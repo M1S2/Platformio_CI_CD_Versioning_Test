@@ -9,6 +9,7 @@
 #include "timeHandling.h"
 #include "version.h"
 #include "updateHandling.h"
+#include "part2ActionHub.h"
 
 void main_initWebserverEndpoints()
 {
@@ -57,4 +58,5 @@ void loop()
 {
     wifiHandling_loop();
     updateHandling_loop();
+    part2ActionHub_handleAPTimeout();
 }
