@@ -38,7 +38,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
 
-    updateStatus.updateStep = UPDATE_STEP_FW;
+    updateHandling_setUpdateStep(UPDATE_STEP_FW);
 
     static unsigned long lastProgressEventTime = 0;
 
@@ -96,8 +96,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     bool fsUpdateResult = true;
     if(updateInfo.has_fs_update)
     {
-        updateStatus.updateStep = UPDATE_STEP_FS;
-        updateHandling_sendUpdateStatusEvent();
+        updateHandling_setUpdateStep(UPDATE_STEP_FS);
         #ifdef DEBUG_OUTPUT
             Serial.println("Update file system...");
         #endif
@@ -122,7 +121,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
                 break;
         }
         fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
-        updateStatus.updateStep = UPDATE_STEP_FW;
+        updateHandling_setUpdateStep(UPDATE_STEP_FW);
     }
 
     bool fwUpdateResult = true;

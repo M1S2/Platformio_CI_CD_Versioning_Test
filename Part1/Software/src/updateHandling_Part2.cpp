@@ -2,6 +2,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 #include "updateHandling_Part2.h"
 #include "timeHandling.h"
 #include "wifiHandling.h"
@@ -10,237 +11,110 @@
 
 /**********************************************************************/
 
+#define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
+
 update_info_t* currentUpdateInfoPart2;
 
-AsyncWebServerRequest *pendingOtaRequest = nullptr;
-bool otaProxyStartRequested = false;
-
-// OTA proxy context
-typedef struct ota_proxy_context
-{
-    std::unique_ptr<WiFiClientSecure> client;
-    HTTPClient http;
-
-    WiFiClient *stream = nullptr;
-
-    bool finished = false;
-
-    uint32_t lastDebugPrintTime = 0;
-} ota_proxy_context_t;
-
 /**********************************************************************/
 
-// Cleanup helper
-static void otaProxy_cleanup(AsyncWebServerRequest *request)
+void updateHandling_part2ReportProgress(float stepProgress)
 {
-    if (!request || !request->_tempObject)
-    {
-        return;
-    }
-
-    ota_proxy_context_t *ctx = reinterpret_cast<ota_proxy_context_t *>(request->_tempObject);
-
-    #ifdef DEBUG_OUTPUT
-        Serial.println("Cleaning up OTA proxy context");
-    #endif
-
-    ctx->http.end();
-    delete ctx;
-    request->_tempObject = nullptr;
-    yield();
+    updateStatus.updateProgress = stepProgress;
+    updateHandling_sendProgressEvent(updateStatus.updateProgress);
 }
 
-/**********************************************************************/
-
-// Route handler
-void otaProxy_handlePart2(AsyncWebServerRequest *request)
+bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath)
 {
-    if(!part2ActionHub_isAPOpen)
+    #ifdef DEBUG_OUTPUT
+        Serial.println("Downloading file...");
+    #endif
+    WiFiClientSecure client;
+    client.setTrustAnchors(&certList);
+
+    HTTPClient http;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(15000);
+    if (!http.begin(client, url))
     {
-        request->send(500, "text/plain", "Access Point not open");
         #ifdef DEBUG_OUTPUT
-            Serial.println("Access Point not open");
+            Serial.println("http.begin failed");
         #endif
-        return;
+        return false;
     }
 
-    if(currentUpdateInfoPart2 == nullptr || !currentUpdateInfoPart2->valid)
-    {
-        request->send(500, "text/plain", "No valid update info available");
-        #ifdef DEBUG_OUTPUT
-            Serial.println("No valid update info available");
-        #endif
-        return;
-    }
-
+    int httpCode = http.GET();
     #ifdef DEBUG_OUTPUT
-        Serial.println();
-        Serial.println("=================================");
-        Serial.println("OTA proxy request");
-        Serial.println("=================================");
-    #endif
-
-    // Allocate persistent request context
-    ota_proxy_context_t *ctx = new ota_proxy_context_t();
-
-    if (!ctx)
-    {
-        request->send(500, "text/plain", "Failed to allocate context");
-        return;
-    }
-    request->_tempObject = ctx;
-
-    // Create HTTPS client
-    ctx->client.reset(new WiFiClientSecure);
-    if (!ctx->client)
-    {
-        otaProxy_cleanup(request);
-        request->send(500, "text/plain", "Failed to allocate client");
-        return;
-    }
-
-    ctx->client->setTrustAnchors(&certList);
-
-    // Optional: reduce TLS memory usage
-    //ctx->client->setBufferSizes(1024, 1024);
-
-    // Configure HTTP client
-    ctx->http.setTimeout(15000);
-    ctx->http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    #ifdef DEBUG_OUTPUT
-        Serial.println("Connecting to GitHub...");
-        Serial.printf("Free heap before begin: %u\n", ESP.getFreeHeap());
-    #endif
-
-    String url = currentUpdateInfoPart2->url_fw;
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("URL: %s\n", url.c_str());
-    #endif
-    if (!ctx->http.begin(*(ctx->client), url))
-    {
-        otaProxy_cleanup(request);
-        request->send(500, "text/plain", "http.begin failed");
-        return;
-    }
-
-    // Start HTTPS request
-    int httpCode = ctx->http.GET();
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("GitHub HTTP code: %d\n", httpCode);
+        Serial.printf("HTTP code: %d\n", httpCode);
     #endif
     if (httpCode != HTTP_CODE_OK)
     {
-        otaProxy_cleanup(request);
-        request->send(500, "text/plain", "GitHub download failed");
-        return;
+        http.end();
+        #ifdef DEBUG_OUTPUT
+            Serial.println("HTTP error");
+        #endif
+        return false;
     }
 
-    // Get stream
-    ctx->stream = ctx->http.getStreamPtr();
-    if (!ctx->stream)
+    File file = LittleFS.open(filePath, "w");
+    if (!file)
     {
-        otaProxy_cleanup(request);
-        request->send(500, "text/plain", "Failed to get stream");
-        return;
+        #ifdef DEBUG_OUTPUT
+            Serial.println("Failed to open file");
+        #endif
+        http.end();
+        return false;
     }
 
-    // Get content length
-    int contentLength = ctx->http.getSize();
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("Content-Length: %d\n", contentLength);
-    #endif
+    int contentLength = http.getSize();
+    WiFiClient *stream = http.getStreamPtr();
+    uint8_t buffer[512];
+    uint32_t totalWritten = 0;
 
-    // Create chunked streaming response
-    AsyncWebServerResponse *response = request->beginChunkedResponse("application/octet-stream", [request](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
+    while (http.connected() || stream->available())
     {
-        ota_proxy_context_t *ctx = reinterpret_cast<ota_proxy_context_t *>(request->_tempObject);
-        if (!ctx)
+        if (contentLength > 0 && totalWritten >= (uint32_t)contentLength)
         {
-            return 0;
+            break;
         }
 
-        // Stream finished
-        if (!ctx->stream->connected() && !ctx->stream->available())
+        size_t available = stream->available();
+        if (available)
         {
+            size_t len = stream->readBytes(buffer, min(available, (size_t)sizeof(buffer)));
+            file.write(buffer, len);
+            totalWritten += len;
+
+            float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
+            updateHandling_part2ReportProgress(percent);
             #ifdef DEBUG_OUTPUT
-                Serial.println("OTA proxy stream finished");
+                Serial.printf("Downloaded: %u bytes  -> %.2f%%\rn", totalWritten, percent);
             #endif
-            ctx->finished = true;
-            otaProxy_cleanup(request);
-            return 0;
         }
-
-        // Wait for incoming data
-        size_t available = ctx->stream->available();
-        if (available == 0)
-        {
-            yield();
-            delay(1);
-            return 0;
-        }
-
-        // Read chunk
-        size_t toRead = min(maxLen, available);
-        size_t len = ctx->stream->readBytes(buffer, toRead);
-
-        #ifdef DEBUG_OUTPUT
-            // Debug output
-            if (millis() - ctx->lastDebugPrintTime > 1000)
-            {
-                ctx->lastDebugPrintTime = millis();
-                Serial.printf("Proxy streamed: %u bytes\n", index + len);
-                Serial.printf("Free heap: %u\n", ESP.getFreeHeap());
-            }
-        #endif
-
         yield();
-        return len;
-    });
-
-    request->onDisconnect([request]()
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("Client disconnected");
-        #endif
-        otaProxy_cleanup(request);
-    });
-
-    // Optional headers
-    if (contentLength > 0)
-    {
-        response->addHeader("Content-Length", String(contentLength));
     }
-    response->addHeader("Cache-Control", "no-cache");
-    response->addHeader("Connection", "close");
-
-    // Send response
-    request->send(response);
+    file.close();
+    http.end();
 
     #ifdef DEBUG_OUTPUT
-        Serial.println("OTA proxy streaming started");
+        Serial.println("Download finished");
     #endif
+    return true;
 }
 
 /**********************************************************************/
 
 void updateHandling_initWebserverEndpoints_Part2()
 {
-    //server.on("/fw/part2_fw.bin", HTTP_GET, otaProxy_handlePart2);
-
-    server.on("/fw/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        if (otaProxyStartRequested || pendingOtaRequest)
-        {
-            request->send(503, "text/plain", "Busy");
-            return;
-        }
-        pendingOtaRequest = request;
-        otaProxyStartRequested = true;
+        updateHandling_setUpdateStep(UPDATE_STEP_FW);
+        request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });
-
-    #ifdef DEBUG_OUTPUT
-        Serial.println("OTA proxy endpoints initialized");
-    #endif
+    server.on("/update/part2_finished", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        updateHandling_setUpdateStep(UPDATE_STEP_FINISHED);
+        request->send(200, "text/plain", "Update finished");
+    });
 }
 
 /**********************************************************************/
@@ -265,23 +139,48 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
 
     currentUpdateInfoPart2 = &updateInfo;
 
+    updateHandling_setUpdateStep(UPDATE_STEP_PREPARE);
+    if(!updateHandling_downloadFileToLittleFS(updateInfo.url_fw, LITTLEFS_PART2_FW_PATH)) { return false; }
+
+    #ifdef DEBUG_OUTPUT
+        if(updateInfo.has_fs_update)
+        {
+            Serial.println("Filesystem update not supported yet for part 2");
+        }
+    #endif
+
     if(!part2ActionHub_startAP()) { return false; }
 
-#warning Just keep the AP open for 120 seconds for testing
-    long startTime = millis();
-    while(millis() - startTime < 120000)
+    updateHandling_setUpdateStep(UPDATE_STEP_WAIT);
+    UpdateStep lastStep = updateStatus.updateStep;
+    while(updateStatus.updateStep != UPDATE_STEP_FINISHED)
     {
-        if (otaProxyStartRequested)
+        if(updateStatus.updateStep != lastStep)
         {
-            otaProxyStartRequested = false;
-            otaProxy_handlePart2(pendingOtaRequest);
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("Update step changed to %d\n", updateStatus.updateStep);
+            #endif
+            updateHandling_sendUpdateStatusEvent();
+            lastStep = updateStatus.updateStep;
         }
-
+        if(part2ActionHub_handleAPTimeout())
+        {
+            // The action hub was closed by timeout
+            updateHandling_setUpdateStep(UPDATE_STEP_NONE);
+        }
         yield();
     }
 
     part2ActionHub_stopAP();
+    // Cleanup downloaded file
+    if(LittleFS.exists(LITTLEFS_PART2_FW_PATH))
+    {
+        LittleFS.remove(LITTLEFS_PART2_FW_PATH);
+    }
 
-#warning Update logic for part 2 is not implemented yet
+    if(updateStatus.updateStep == UPDATE_STEP_FINISHED)
+    {
+        return true;
+    }
     return false;
 }

@@ -88,6 +88,12 @@ void updateHandling_sendUpdateStatusEvent()
     events.send(response.c_str(), SERVER_EVENT_UPDATE_STATUS);
 }
 
+void updateHandling_setUpdateStep(UpdateStep step)
+{
+    updateStatus.updateStep = step;
+    updateHandling_sendUpdateStatusEvent();
+}
+
 /**********************************************************************/
 
 bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
@@ -225,6 +231,8 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 bool updateHandling_performUpdate(String component = "", int componentInstanceIndex = -1)
 {
+    updateStatus.updateStep = UPDATE_STEP_NONE;
+
     update_info_t updateInfo;
     if(!updateHandling_findComponentByName(component, &updateInfo, nullptr))
     {

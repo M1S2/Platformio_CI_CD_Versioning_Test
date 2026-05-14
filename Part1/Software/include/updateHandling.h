@@ -23,8 +23,12 @@ enum UpdateState
 
 enum UpdateStep
 {
+    UPDATE_STEP_NONE,
+    UPDATE_STEP_PREPARE,
+    UPDATE_STEP_WAIT,
     UPDATE_STEP_FW,
-    UPDATE_STEP_FS
+    UPDATE_STEP_FS,
+    UPDATE_STEP_FINISHED
 };
 
 #define UPDATE_COMPONENT_NAME_PART1 "part1"
@@ -65,5 +69,7 @@ void updateHandling_startUpdate(String component, int componentInstanceIndex);
 
 void updateHandling_sendProgressEvent(float progress);
 void updateHandling_sendUpdateStatusEvent();
+
+void updateHandling_setUpdateStep(UpdateStep step);
 
 #endif

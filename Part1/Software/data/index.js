@@ -15,8 +15,12 @@ const UpdateState =
 
 const UpdateStep =
 {
-	FW: 0,
-	FS: 1
+    NONE: 0,
+    PREPARE: 1,
+    WAIT: 2,
+    FW: 3,
+    FS: 4,
+    FINISHED: 5
 };
 
 let updateProgressSource = null;
@@ -195,13 +199,30 @@ function displayUpdateStatus(updateStatus)
 			isChecking = true;
 			break;
 		case UpdateState.UPDATING:
-			if (updateStatus.updateStep === UpdateStep.FW)
+			switch(updateStatus.updateStep)
 			{
-				statusText = `Updating firmware of ${updateStatus.currentComponent}`;
-			}
-			else if (updateStatus.updateStep === UpdateStep.FS)
-			{
-				statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
+				case UpdateStep.NONE:
+					statusText = 'Updating';
+					break;
+				case UpdateStep.PREPARE:
+					statusText = `Preparing update of ${updateStatus.currentComponent}`;
+					break;
+				case UpdateStep.WAIT:
+					statusText = `Waiting for ${updateStatus.currentComponent}`;
+					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
+					break;
+				case UpdateStep.FW:
+					statusText = `Updating firmware of ${updateStatus.currentComponent}`;
+					break;
+				case UpdateStep.FS:
+					statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
+					break;
+				case UpdateStep.FINISHED:
+					statusText = `Update of ${updateStatus.currentComponent} finished`;
+					break;
+				default:
+					statusText = 'Updating';
+					break;
 			}
 			isUpdating = true;
 			break;
@@ -235,7 +256,7 @@ function displayUpdateStatus(updateStatus)
 		loader.style.display = isCurrentActiveLoader ? 'inline-block' : 'none';
 	});
 
-	if (progressBar && typeof updateStatus.updateProgress === 'number')
+	if (progressBar && typeof updateStatus.updateProgress === 'number' && updateStatus.updateStep !== UpdateStep.WAIT)
 	{
 		progressBar.value = updateStatus.updateProgress;
 	}
