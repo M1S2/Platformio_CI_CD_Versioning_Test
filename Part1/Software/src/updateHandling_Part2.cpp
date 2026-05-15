@@ -3,6 +3,7 @@
 #include <ESP8266httpUpdate.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <MD5Builder.h>
 #include "updateHandling_Part2.h"
 #include "timeHandling.h"
 #include "wifiHandling.h"
@@ -17,19 +18,64 @@ update_info_t* currentUpdateInfoPart2;
 
 /**********************************************************************/
 
+// Hilfsfunktion zur Berechnung des MD5-Hashes einer Datei im LittleFS
+String calculateFileMD5(const String &filePath)
+{
+    File file = LittleFS.open(filePath, "r");
+    if (!file)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("Failed to open file %s for MD5 calculation\n", filePath.c_str());
+        #endif
+        return "";
+    }
+
+    MD5Builder md5;
+    md5.begin();
+    uint8_t buffer[512];
+    while (file.available())
+    {
+        size_t bytesRead = file.read(buffer, sizeof(buffer));
+        md5.add(buffer, bytesRead);
+    }
+    file.close();
+    md5.calculate();
+    return md5.toString();
+}
+
 void updateHandling_part2ReportProgress(float stepProgress)
 {
     updateStatus.updateProgress = stepProgress;
     updateHandling_sendProgressEvent(updateStatus.updateProgress);
 }
 
-bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath)
+bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
 {
     #ifdef DEBUG_OUTPUT
         Serial.println("Downloading file...");
     #endif
     WiFiClientSecure client;
     client.setTrustAnchors(&certList);
+
+    // Check, if the file already exists and the MD5 hash matches
+    if (LittleFS.exists(filePath))
+    {
+        String currentMd5 = calculateFileMD5(filePath);
+        if (currentMd5 == expectedMd5)
+        {
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("File %s already exists and MD5 matches. Skipping download.\n", filePath.c_str());
+            #endif
+            return true;
+        }
+        else
+        {
+            #ifdef DEBUG_OUTPUT
+                Serial.printf("File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n", filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
+            #endif
+            LittleFS.remove(filePath); // Remove old file
+        }
+    }
 
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -87,16 +133,28 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
             updateHandling_part2ReportProgress(percent);
             #ifdef DEBUG_OUTPUT
-                Serial.printf("Downloaded: %u bytes  -> %.2f%%\rn", totalWritten, percent);
+                Serial.printf("Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
             #endif
         }
         yield();
     }
+
     file.close();
     http.end();
 
+    // Check MD5 hash after download
+    String downloadedMd5 = calculateFileMD5(filePath);
+    if (downloadedMd5 != expectedMd5)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n", expectedMd5.c_str(), downloadedMd5.c_str());
+        #endif
+        LittleFS.remove(filePath); // Defect file -> delete it
+        return false;
+    }
+
     #ifdef DEBUG_OUTPUT
-        Serial.println("Download finished");
+        Serial.println("Download finished and MD5 verified.");
     #endif
     return true;
 }
@@ -120,10 +178,27 @@ void updateHandling_initWebserverEndpoints_Part2()
         updateHandling_setUpdateStep(UPDATE_STEP_FW);
         request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });
-    server.on("/update/part2_finished", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        updateHandling_setUpdateStep(UPDATE_STEP_FINISHED);
-        request->send(200, "text/plain", "Update finished");
+        if(currentUpdateInfoPart2 == nullptr || !currentUpdateInfoPart2->valid)
+        {
+            request->send(404, "text/plain", "No valid update info available");
+            return;
+        }
+        request->send(200, "text/plain", currentUpdateInfoPart2->fw_md5);
+    });
+    server.on("/update/part2_report", HTTP_POST, [](AsyncWebServerRequest *request)
+    {
+        if (request->hasParam("progress", true))
+        {
+            updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
+            updateHandling_sendProgressEvent(updateStatus.updateProgress);
+        }
+        if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
+        {
+            updateHandling_setUpdateStep(UPDATE_STEP_FINISHED);
+        }
+        request->send(200, "text/plain", "OK");
     });
 }
 
@@ -150,7 +225,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     currentUpdateInfoPart2 = &updateInfo;
 
     updateHandling_setUpdateStep(UPDATE_STEP_PREPARE);
-    if(!updateHandling_downloadFileToLittleFS(updateInfo.url_fw, LITTLEFS_PART2_FW_PATH)) { return false; }
+    if(!updateHandling_downloadFileToLittleFS(updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, updateInfo.fw_md5)) { return false; }
 
     #ifdef DEBUG_OUTPUT
         if(updateInfo.has_fs_update)
@@ -173,9 +248,10 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
             updateHandling_sendUpdateStatusEvent();
             lastStep = updateStatus.updateStep;
         }
+
         if(part2ActionHub_handleAPTimeout())
         {
-            // The action hub was closed by timeout
+            // The action hub was closed by timeout.
             updateHandling_setUpdateStep(UPDATE_STEP_NONE);
         }
         yield();

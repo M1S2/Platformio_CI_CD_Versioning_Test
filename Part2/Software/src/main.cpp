@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "version.h"
 #include "config.h"
+#include "part2ActionHub.h"
 
 bool isLedOn;
 void setLedState(bool on)
@@ -29,8 +30,15 @@ void setup()
     #endif
 }
 
+int cnt = 0;
 void loop()
 {
     toggleLedState();
     delay(1000);
+    cnt++;
+
+    if(cnt == 10)
+    {
+        part2ActionHub_runUpdate();
+    }
 }

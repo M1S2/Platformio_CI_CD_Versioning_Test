@@ -157,7 +157,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
         updateStatus.state = UPDATE_STATE_RESTARTING;
         updateHandling_sendUpdateStatusEvent();
     
-        // Wait for 2 seconds to ensure that the HTTP response is sent completely before restarting.
+        // Wait for some seconds to ensure that the HTTP response is sent completely before restarting.
         // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
         unsigned long start = millis();
         while (millis() - start < 3000)
