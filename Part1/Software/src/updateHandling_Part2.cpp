@@ -107,6 +107,16 @@ void updateHandling_initWebserverEndpoints_Part2()
 {
     server.on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
     {
+        if(!part2ActionHub_isAPOpen)
+        {
+            request->send(404, "text/plain", "Action hub not open");
+            return;
+        }
+        if(!LittleFS.exists(LITTLEFS_PART2_FW_PATH))
+        {
+            request->send(404, "text/plain", "File not found");
+            return;
+        }
         updateHandling_setUpdateStep(UPDATE_STEP_FW);
         request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });

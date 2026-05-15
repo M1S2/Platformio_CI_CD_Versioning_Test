@@ -2,6 +2,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <ArduinoJson.h>
+#include <AsyncJson.h>
 #include "updateHandling.h"
 #include "wifiHandling.h"
 #include "timeHandling.h"
@@ -280,7 +281,8 @@ void updateHandling_clearVersionInfos()
 
 void updateHandling_initWebserverEndpoints()
 {
-    server.on("/update/set_channel", HTTP_GET, [](AsyncWebServerRequest *request)
+    // Handler for /update/set_channel (POST with JSON-Body)
+    AsyncCallbackJsonWebHandler* setChannelHandler = new AsyncCallbackJsonWebHandler("/update/set_channel", [](AsyncWebServerRequest *request, JsonVariant &json)
     {
         if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
         {
@@ -288,12 +290,14 @@ void updateHandling_initWebserverEndpoints()
             return;
         }
 
-        String channel = "";
-        if (request->hasParam("channel"))
+        JsonObject jsonObj = json.as<JsonObject>();
+        if (!jsonObj.containsKey("channel"))
         {
-            channel = request->getParam("channel")->value();
+            request->send(400, "text/plain", "Missing 'channel' parameter in JSON body");
+            return;
         }
 
+        String channel = jsonObj["channel"].as<String>();
         if (channel == "dev")
         {
             updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
@@ -311,36 +315,34 @@ void updateHandling_initWebserverEndpoints()
         updateHandling_clearVersionInfos();
         request->send(200, "text/plain", "Channel set to " + channel);
     });
+    server.addHandler(setChannelHandler);
 
-    server.on("/update/check", HTTP_GET, [](AsyncWebServerRequest *request)
+    server.on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
         {
-            request->send(400, "text/plain", "Already fetching version infos or performing an update");
+            request->send(400, "text/plain", "Already fetching version infos or performing an update.");
             return;
         }
         else
         {
             updateHandling_startFetchingNewestVersionInfos();
-            request->send(200, "text/plain", "Check for updates...");
+            request->send(200, "text/plain", "Check for updates initiated.");
         }
     });
 
-    server.on("/update/start", HTTP_GET, [](AsyncWebServerRequest *request)
+    // Handler for /update/start (POST with JSON-Body)
+    AsyncCallbackJsonWebHandler* startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [](AsyncWebServerRequest *request, JsonVariant &json)
     {
-        String component = "";
-        if (request->hasParam("component"))
+        JsonObject jsonObj = json.as<JsonObject>();
+        if (!jsonObj.containsKey("component") || !jsonObj.containsKey("componentInstanceIndex"))
         {
-            component = request->getParam("component")->value();
+            request->send(400, "text/plain", "Missing 'component' or 'componentInstanceIndex' in JSON body");
+            return;
         }
-        
-        String componentInstanceIndexStr = "";
-        int componentInstanceIndex = -1;
-        if(request->hasParam("componentInstanceIndex"))
-        {
-            componentInstanceIndexStr = request->getParam("componentInstanceIndex")->value();
-            componentInstanceIndex = componentInstanceIndexStr.toInt();
-        }
+
+        String component = jsonObj["component"].as<String>();
+        int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
 
         DynamicJsonDocument doc(512);
         int resultCode = 200;
@@ -349,7 +351,7 @@ void updateHandling_initWebserverEndpoints()
         {
             updateHandling_startUpdate(component, componentInstanceIndex);
             doc["status"] = "ok";
-            doc["message"] = "Update for " + component + ", index " + componentInstanceIndexStr + " started";
+            doc["message"] = "Update for " + component + " started";
         }
         else
         {
@@ -362,6 +364,7 @@ void updateHandling_initWebserverEndpoints()
         serializeJson(doc, response);
         request->send(resultCode, "application/json", response);
     });
+    server.addHandler(startUpdateHandler);
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {

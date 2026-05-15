@@ -266,7 +266,15 @@ function displayUpdateStatus(updateStatus)
 
 async function setUpdateChannel(channel)
 {
-	await fetch(`/update/set_channel?channel=${encodeURIComponent(channel)}`);
+	await fetch(`/update/set_channel`,
+	{
+		method: 'POST',
+		headers:
+		{
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ channel: channel })
+	});
   	getUpdateStatusAndInfo();
 }
 
@@ -274,7 +282,7 @@ async function setUpdateChannel(channel)
 
 async function checkUpdate()
 {
-  	await fetch('/update/check')
+  	await fetch('/update/check', { method: 'POST' })
 	.then(async response =>
 	{
 		if (response.ok)
@@ -299,7 +307,19 @@ async function startUpdate(componentName, componentInstanceIndex)
 {
 	try
 	{
-		const response = await fetch('/update/start?component=' + componentName + '&componentInstanceIndex=' + componentInstanceIndex);
+		const response = await fetch('/update/start',
+		{
+			method: 'POST',
+			headers:
+			{
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(
+			{
+				component: componentName,
+				componentInstanceIndex: componentInstanceIndex
+			})
+		});
 		const jsonRsp = await response.json();
 		const updateStatusElement = document.getElementById('update_status');
 		if (updateStatusElement && jsonRsp.status === 'error')
