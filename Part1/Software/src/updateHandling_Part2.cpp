@@ -8,7 +8,6 @@
 #include "timeHandling.h"
 #include "wifiHandling.h"
 #include "part2ActionHub.h"
-#include "certs.h"
 
 /**********************************************************************/
 
@@ -18,28 +17,23 @@ update_info_t* currentUpdateInfoPart2;
 
 /**********************************************************************/
 
-// Hilfsfunktion zur Berechnung des MD5-Hashes einer Datei im LittleFS
+// Calculate the MD5 hash of a file in the LittleFS
 String calculateFileMD5(const String &filePath)
 {
     File file = LittleFS.open(filePath, "r");
     if (!file)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("Failed to open file %s for MD5 calculation\n", filePath.c_str());
+            Serial.printf("[Update Handling Part2] Failed to open file %s for MD5 calculation\n", filePath.c_str());
         #endif
         return "";
     }
 
     MD5Builder md5;
     md5.begin();
-    uint8_t buffer[512];
-    while (file.available())
-    {
-        size_t bytesRead = file.read(buffer, sizeof(buffer));
-        md5.add(buffer, bytesRead);
-    }
-    file.close();
+    md5.addStream(file, file.size());
     md5.calculate();
+    file.close();
     return md5.toString();
 }
 
@@ -52,10 +46,8 @@ void updateHandling_part2ReportProgress(float stepProgress)
 bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
 {
     #ifdef DEBUG_OUTPUT
-        Serial.println("Downloading file...");
+        Serial.println("[Update Handling Part2] Downloading file...");
     #endif
-    WiFiClientSecure client;
-    client.setTrustAnchors(&certList);
 
     // Check, if the file already exists and the MD5 hash matches
     if (LittleFS.exists(filePath))
@@ -64,14 +56,14 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         if (currentMd5 == expectedMd5)
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("File %s already exists and MD5 matches. Skipping download.\n", filePath.c_str());
+                Serial.printf("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n", filePath.c_str());
             #endif
             return true;
         }
         else
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n", filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
+                Serial.printf("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n", filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
             #endif
             LittleFS.remove(filePath); // Remove old file
         }
@@ -80,24 +72,23 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);
-    if (!http.begin(client, url))
+    http.setReuse(false);
+    if (!http.begin(clientSecure, url))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("http.begin failed");
+            Serial.println("[Update Handling Part2] http.begin failed");
         #endif
+        http.end();
         return false;
     }
 
     int httpCode = http.GET();
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("HTTP code: %d\n", httpCode);
-    #endif
     if (httpCode != HTTP_CODE_OK)
     {
-        http.end();
         #ifdef DEBUG_OUTPUT
-            Serial.println("HTTP error");
+            Serial.printf("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n", httpCode, http.errorToString(httpCode).c_str());
         #endif
+        http.end();
         return false;
     }
 
@@ -105,7 +96,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (!file)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("Failed to open file");
+            Serial.println("[Update Handling Part2] Failed to open file");
         #endif
         http.end();
         return false;
@@ -113,10 +104,36 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
 
     int contentLength = http.getSize();
     WiFiClient *stream = http.getStreamPtr();
-    uint8_t buffer[512];
-    uint32_t totalWritten = 0;
+    if (stream == nullptr)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("[Update Handling Part2] Failed to get stream pointer");
+        #endif
+        file.close();
+        http.end();
+        return false;
+    }
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("[Update Handling Part2] Stream successfully opened, %d bytes to download\n", contentLength);
+    #endif
 
-    while (http.connected() || stream->available())
+    // Allocate buffer on heap (instead of creating it on the stack with uint8_t buffer[512])
+    size_t bufferSize = 512;
+    uint8_t *buffer = (uint8_t *)malloc(bufferSize);
+    if (!buffer)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("[Update Handling Part2] Could not allocate download buffer (out of memory)");
+        #endif
+        file.close();
+        http.end();
+        return false;
+    }
+
+    uint32_t totalWritten = 0;
+    static unsigned long lastProgressEventTime = 0;
+
+    while (http.connected() || (stream && stream->available()))
     {
         if (contentLength > 0 && totalWritten >= (uint32_t)contentLength)
         {
@@ -126,19 +143,26 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         size_t available = stream->available();
         if (available)
         {
-            size_t len = stream->readBytes(buffer, min(available, (size_t)sizeof(buffer)));
+            size_t len = stream->readBytes(buffer, min(available, bufferSize));
             file.write(buffer, len);
             totalWritten += len;
 
             float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
-            updateHandling_part2ReportProgress(percent);
+            
+            unsigned long currentTime = millis();
+            if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS || totalWritten == (uint32_t)contentLength)
+            {
+                updateHandling_part2ReportProgress(percent);
+                lastProgressEventTime = currentTime;
+            }
             #ifdef DEBUG_OUTPUT
-                Serial.printf("Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
+                Serial.printf("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
             #endif
         }
         yield();
     }
 
+    free(buffer);
     file.close();
     http.end();
 
@@ -147,14 +171,14 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (downloadedMd5 != expectedMd5)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n", expectedMd5.c_str(), downloadedMd5.c_str());
+            Serial.printf("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n", expectedMd5.c_str(), downloadedMd5.c_str());
         #endif
         LittleFS.remove(filePath); // Defect file -> delete it
         return false;
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.println("Download finished and MD5 verified.");
+        Serial.println("[Update Handling Part2] Download finished and MD5 verified.");
     #endif
     return true;
 }
@@ -178,6 +202,9 @@ void updateHandling_initWebserverEndpoints_Part2()
         updateHandling_setUpdateStep(UPDATE_STEP_FW);
         request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });
+    
+    /*--------------------------------------------------------------------*/
+
     server.on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         if(currentUpdateInfoPart2 == nullptr || !currentUpdateInfoPart2->valid)
@@ -187,6 +214,9 @@ void updateHandling_initWebserverEndpoints_Part2()
         }
         request->send(200, "text/plain", currentUpdateInfoPart2->fw_md5);
     });
+    
+    /*--------------------------------------------------------------------*/
+    
     server.on("/update/part2_report", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         if (request->hasParam("progress", true))
@@ -209,7 +239,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     if (!updateInfo.valid)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("No valid update info available");
+            Serial.println("[Update Handling Part2] No valid update info available");
         #endif
         return false;
     }
@@ -217,7 +247,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+            Serial.println("[Update Handling Part2] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
         #endif
         return false;
     }
@@ -230,7 +260,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     #ifdef DEBUG_OUTPUT
         if(updateInfo.has_fs_update)
         {
-            Serial.println("Filesystem update not supported yet for part 2");
+            Serial.println("[Update Handling Part2] Filesystem update not supported yet for part 2");
         }
     #endif
 
@@ -243,7 +273,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
         if(updateStatus.updateStep != lastStep)
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("Update step changed to %d\n", updateStatus.updateStep);
+                Serial.printf("[Update Handling Part2] Update step changed to %d\n", updateStatus.updateStep);
             #endif
             updateHandling_sendUpdateStatusEvent();
             lastStep = updateStatus.updateStep;

@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include "updateHandling_Part1.h"
 #include "timeHandling.h"
-#include "certs.h"
+#include "wifiHandling.h"
 
 /**********************************************************************/
 
@@ -31,9 +31,6 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     #ifdef DEBUG_OUTPUT
         Serial.printf("Performing update for component %s, index %d to version %s\n", component.c_str(), componentInstanceIndex, updateInfo.version.c_str());
     #endif
-
-    WiFiClientSecure client;
-    client.setTrustAnchors(&certList);
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
@@ -101,7 +98,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
             Serial.println("Update file system...");
         #endif
         ESPhttpUpdate.setMD5sum(updateInfo.fs_md5);
-        t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(client, updateInfo.url_fs);
+        t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, updateInfo.url_fs);
         switch (returnFsUpdate)
         {
             case HTTP_UPDATE_FAILED:
@@ -131,7 +128,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     #endif
     ESPhttpUpdate.setMD5sum(updateInfo.fw_md5);
     ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
-    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(client, updateInfo.url_fw);
+    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(clientSecure, updateInfo.url_fw);
     switch (returnFwUpdate)
     {
         case HTTP_UPDATE_FAILED:

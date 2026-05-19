@@ -4,8 +4,6 @@
 #include <Arduino.h>
 #include "config.h"
 
-extern X509List certList;
-
 enum UpdateChannel
 {
     UPDATE_CHANNEL_STABLE,

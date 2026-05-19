@@ -6,6 +6,7 @@
 
 extern AsyncWebServer server;
 extern AsyncEventSource events;
+extern WiFiClientSecure clientSecure;
 
 #define SERVER_EVENT_SOURCE                     "/events"
 #define SERVER_EVENT_UPDATE_PROGRESS            "updateProgress"

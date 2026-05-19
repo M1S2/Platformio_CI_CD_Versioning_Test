@@ -5,11 +5,16 @@
 #include "config.h"
 #include "main.h"
 #include "updateHandling.h"
+#include "certs.h"
 
 AsyncWebServer server(80);
 AsyncEventSource events(SERVER_EVENT_SOURCE);
 DNSServer dns;
 AsyncWiFiManager wifiManager(&server, &dns);
+
+// Create a list of certificates with the server certificate
+X509List certList(ROOT_CA_CERT);
+WiFiClientSecure clientSecure;
 
 bool wifiConfig_isAPOpen;
 WifiState wifiHandling_wifiState = WIFI_DISCONNECTED;
@@ -24,7 +29,7 @@ void wifiHandling_eraseCredentials()
     WiFi.disconnect(true);
     ESP.eraseConfig();
     #ifdef DEBUG_OUTPUT
-        Serial.println("WiFi credentials erased");
+        Serial.println("[WiFi Handling] WiFi credentials erased");
     #endif
     delay(500);
     ESP.restart();
@@ -52,6 +57,19 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event)
 
 void wifiHandling_initWebserverFiles()
 {
+    events.onConnect([](AsyncEventSourceClient *client)
+    {
+        // Stability: Limit concurrent SSE connections. 
+        // Reloading a browser tab often creates a 2nd connection before the 1st times out.
+        if (events.count() > 1)
+        {
+            client->close();
+            return;
+        }
+        #ifdef DEBUG_OUTPUT
+            Serial.println("[WiFi Handling] SSE client connected");
+        #endif
+    });
     server.addHandler(&events);
     server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
     server.onNotFound([](AsyncWebServerRequest *request)
@@ -63,18 +81,23 @@ void wifiHandling_initWebserverFiles()
 void wifiHandling_onConnected()
 {
     #ifdef DEBUG_OUTPUT
-        Serial.println("WiFi connected");
-        Serial.print("IP: ");
+        Serial.println("[WiFi Handling] WiFi connected");
+        Serial.print("[WiFi Handling] IP: ");
         Serial.println(WiFi.localIP());
     #endif
 
     wifiConfig_isAPOpen = false;
 
-    wifiHandling_initWebserverFiles();
-    main_initWebserverEndpoints();
-    updateHandling_initWebserverEndpoints();
-
-    server.begin();
+    static bool webserverStarted = false;
+    if (!webserverStarted)
+    {
+        // Init the server and the handlers only once
+        wifiHandling_initWebserverFiles();
+        main_initWebserverEndpoints();
+        updateHandling_initWebserverEndpoints();
+        server.begin();
+        webserverStarted = true;
+    }
 
     WiFi.setAutoReconnect(true);
 }
@@ -82,7 +105,7 @@ void wifiHandling_onConnected()
 void wifiHandling_wifiManagerSaveCB()
 {
     #ifdef DEBUG_OUTPUT
-        Serial.println("WiFi credentials saved");
+        Serial.println("[WiFi Handling] WiFi credentials saved");
     #endif
 }
 
@@ -105,6 +128,10 @@ void wifiHandling_init()
     WiFi.persistent(true);
     delay(100);
 
+    clientSecure.setTrustAnchors(&certList);
+    // Limit SSL buffers to save ~20KB of RAM. 4096 is usually enough for downloads.
+    clientSecure.setBufferSizes(1024, 4096);
+
     #ifdef DEBUG_OUTPUT
         wifiManager.setDebugOutput(true);
     #else
@@ -124,7 +151,7 @@ void wifiHandling_init()
     else
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("No stored credentials");
+            Serial.println("[WiFi Handling] No stored credentials");
         #endif
         wifiHandling_wifiState = WIFI_START_PORTAL;
     }
@@ -146,7 +173,7 @@ void wifiHandling_loop()
             if (WiFi.status() == WL_CONNECTED)
             {
                 #ifdef DEBUG_OUTPUT
-                    Serial.println("WIFI_CONNECTING -> WIFI_CONNECTED");
+                    Serial.println("[WiFi Handling] WIFI_CONNECTING -> WIFI_CONNECTED");
                 #endif
 
                 wifiHandling_onConnected();
@@ -158,7 +185,7 @@ void wifiHandling_loop()
             if (millis() - wifiStartTime > CONNECTION_TIMEOUT_MS)
             {
                 #ifdef DEBUG_OUTPUT
-                    Serial.println("Initial connect failed → starting portal");
+                    Serial.println("[WiFi Handling] Initial connect failed → starting portal");
                 #endif
                 wifiHandling_wifiState = WIFI_START_PORTAL;
             }
@@ -179,7 +206,7 @@ void wifiHandling_loop()
             if (WiFi.status() == WL_CONNECTED)
             {
                 #ifdef DEBUG_OUTPUT
-                    Serial.println("WIFI_PORTAL -> WIFI_CONNECTED");
+                    Serial.println("[WiFi Handling] WIFI_PORTAL -> WIFI_CONNECTED");
                 #endif
 
                 WiFi.softAPdisconnect(true);    // close the AP

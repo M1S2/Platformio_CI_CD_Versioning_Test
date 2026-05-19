@@ -78,16 +78,15 @@ function initUpdateProgressEvents()
 
 async function getUpdateStatusAndInfo()
 {
-	const [statusRes, infoRes] = await Promise.all([
-		fetch('/update/status'),
-		fetch('/update/info')
-	]);
-
+	const statusRes = await fetch('/update/status');
 	const updateStatus = await statusRes.json();
+
+	displayUpdateStatus(updateStatus);
+
+	const infoRes = await fetch('/update/info');
 	const updateInfo = await infoRes.json();
 
 	displayUpdateInfos(updateInfo);
-	displayUpdateStatus(updateStatus);
 }
 
 /**********************************************************************/

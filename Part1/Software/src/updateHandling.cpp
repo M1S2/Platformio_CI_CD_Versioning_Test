@@ -39,9 +39,6 @@ Dev Manifest Format:
 }
 */
 
-// Create a list of certificates with the server certificate
-X509List certList(ROOT_CA_CERT);
-
 update_status_t updateStatus;
 
 update_info_t updateInfo_Part1;
@@ -64,29 +61,43 @@ bool requestUpdate = false;
 
 void updateHandling_sendProgressEvent(float progress)
 {
-    String payload = String(progress, 2);
-    events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
+    if (events.count() > 0)
+    {
+        String payload = String(progress, 2);
+        events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
+    }
 }
 
-String updateHandling_getUpdateStatusJson(update_status_t &status)
+void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument &doc)
 {
-    DynamicJsonDocument doc(512);
     doc["channel"] = status.currentUpdateChannel;
     doc["state"] = status.state;
     doc["currentComponent"] = status.currentComponent;
     doc["currentComponentInstanceIndex"] = status.currentComponentInstanceIndex;
     doc["updateStep"] = status.updateStep;
     doc["updateProgress"] = status.updateProgress;
-
-    String response;
-    serializeJson(doc, response);
-    return response;
 }
 
 void updateHandling_sendUpdateStatusEvent()
 {
-    String response = updateHandling_getUpdateStatusJson(updateStatus);
-    events.send(response.c_str(), SERVER_EVENT_UPDATE_STATUS);
+    #ifdef DEBUG_OUTPUT
+        Serial.printf("[Update Handling] Sending update status event (Heap: %u, MaxBlock: %u)\n", ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+    #endif
+
+    if (events.count() > 0)
+    {
+        StaticJsonDocument<256> doc;
+        updateHandling_prepareStatusDoc(updateStatus, doc);
+        char buffer[256];
+        serializeJson(doc, buffer, sizeof(buffer));
+        events.send(buffer, SERVER_EVENT_UPDATE_STATUS);
+    }
+    else
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("[Update Handling] No event connected. Not sending update status event.");
+        #endif
+    }
 }
 
 void updateHandling_setUpdateStep(UpdateStep step)
@@ -100,7 +111,7 @@ void updateHandling_setUpdateStep(UpdateStep step)
 bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
 {
     #ifdef DEBUG_OUTPUT
-        Serial.printf("Looking for component \"%s\"...\n", componentName.c_str());
+        Serial.printf("[Update Handling] Looking for component \"%s\"...\n", componentName.c_str());
     #endif
 
     bool componentValid = false;
@@ -118,7 +129,7 @@ bool updateHandling_findComponentByName(String componentName, update_info_t* fou
             }
 
             #ifdef DEBUG_OUTPUT
-                Serial.printf("Found component \"%s\" at index %d\n", componentName.c_str(), i);
+                Serial.printf("[Update Handling] Found component \"%s\" at index %d\n", componentName.c_str(), i);
             #endif
             break;
         }
@@ -133,7 +144,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+            Serial.println("[Update Handling] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
         #endif
         return false;
     }
@@ -147,22 +158,19 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     String manifestUrl = String(baseUrl) + manifestFilename;
 
     #ifdef DEBUG_OUTPUT
-        Serial.printf("Checking for %s update...\n", (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
+        Serial.printf("[Update Handling] Checking for %s update...\n", (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
     #endif
-
-    WiFiClientSecure client;
-    client.setTrustAnchors(&certList);
 
     HTTPClient http;
     http.setTimeout(10000); // 10 Seconds
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.begin(client, manifestUrl.c_str());
+    http.setReuse(false);
+    http.begin(clientSecure, manifestUrl.c_str());
     int httpCode = http.GET();
     #ifdef DEBUG_OUTPUT
-        Serial.printf("HTTP Code: %d\n", httpCode);
         if (httpCode <= 0)
         {
-            Serial.printf("HTTP error: %s\n", http.errorToString(httpCode).c_str());
+            Serial.printf("[Update Handling] HTTP error: Code = %d, Message = %s\n", httpCode, http.errorToString(httpCode).c_str());
         }
     #endif
 
@@ -172,15 +180,11 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
         return false;
     }
 
-    String payload = http.getString();
-    #ifdef DEBUG_OUTPUT
-        Serial.println("Received manifest:");
-        Serial.println(payload);
-    #endif
+    // Parse directly from stream to save stack and heap memory
+    DynamicJsonDocument doc(1024);
+    DeserializationError err = deserializeJson(doc, http.getStream());
     http.end();
 
-    DynamicJsonDocument doc(1024);
-    DeserializationError err = deserializeJson(doc, payload);
     if (err)
     {
         return false;
@@ -234,14 +238,15 @@ bool updateHandling_performUpdate(String component = "", int componentInstanceIn
 {
     updateStatus.updateStep = UPDATE_STEP_NONE;
 
-    update_info_t updateInfo;
-    if(!updateHandling_findComponentByName(component, &updateInfo, nullptr))
+    int foundIndex = -1;
+    if(!updateHandling_findComponentByName(component, nullptr, &foundIndex))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("No update info found for component \"%s\"\n", component.c_str());
+            Serial.printf("[Update Handling] No update info found for component \"%s\"\n", component.c_str());
         #endif
         return false;
     }
+    update_info_t& updateInfo = *updateInfos[foundIndex];
 
     if(component == UPDATE_COMPONENT_NAME_PART1)
     {
@@ -254,7 +259,7 @@ bool updateHandling_performUpdate(String component = "", int componentInstanceIn
     else
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("Update for component \"%s\" not supported\n", component.c_str());
+            Serial.printf("[Update Handling] Update for component \"%s\" not supported\n", component.c_str());
         #endif
         return false;
     }
@@ -282,40 +287,46 @@ void updateHandling_clearVersionInfos()
 void updateHandling_initWebserverEndpoints()
 {
     // Handler for /update/set_channel (POST with JSON-Body)
-    AsyncCallbackJsonWebHandler* setChannelHandler = new AsyncCallbackJsonWebHandler("/update/set_channel", [](AsyncWebServerRequest *request, JsonVariant &json)
+    static AsyncCallbackJsonWebHandler* setChannelHandler = nullptr;
+    if (!setChannelHandler)
     {
-        if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
+        setChannelHandler = new AsyncCallbackJsonWebHandler("/update/set_channel", [](AsyncWebServerRequest *request, JsonVariant &json)
         {
-            request->send(400, "text/plain", "Cannot change update channel while fetching version infos or performing an update");
-            return;
-        }
+            if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
+            {
+                request->send(400, "text/plain", "Cannot change update channel while fetching version infos or performing an update");
+                return;
+            }
 
-        JsonObject jsonObj = json.as<JsonObject>();
-        if (!jsonObj.containsKey("channel"))
-        {
-            request->send(400, "text/plain", "Missing 'channel' parameter in JSON body");
-            return;
-        }
+            JsonObject jsonObj = json.as<JsonObject>();
+            if (!jsonObj.containsKey("channel"))
+            {
+                request->send(400, "text/plain", "Missing 'channel' parameter in JSON body");
+                return;
+            }
 
-        String channel = jsonObj["channel"].as<String>();
-        if (channel == "dev")
-        {
-            updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
-        }
-        else if (channel == "stable")
-        {
-            updateStatus.currentUpdateChannel = UPDATE_CHANNEL_STABLE;
-        }
-        else
-        {
-            request->send(400, "text/plain", "Missing or invalid channel parameter");
-            return;
-        }
+            String channel = jsonObj["channel"].as<String>();
+            if (channel == "dev")
+            {
+                updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
+            }
+            else if (channel == "stable")
+            {
+                updateStatus.currentUpdateChannel = UPDATE_CHANNEL_STABLE;
+            }
+            else
+            {
+                request->send(400, "text/plain", "Missing or invalid channel parameter");
+                return;
+            }
 
-        updateHandling_clearVersionInfos();
-        request->send(200, "text/plain", "Channel set to " + channel);
-    });
-    server.addHandler(setChannelHandler);
+            updateHandling_clearVersionInfos();
+            request->send(200, "text/plain", "Channel set to " + channel);
+        });
+        server.addHandler(setChannelHandler);
+    }
+
+    /*--------------------------------------------------------------------*/
 
     server.on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
     {
@@ -331,50 +342,65 @@ void updateHandling_initWebserverEndpoints()
         }
     });
 
+    /*--------------------------------------------------------------------*/
+
     // Handler for /update/start (POST with JSON-Body)
-    AsyncCallbackJsonWebHandler* startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [](AsyncWebServerRequest *request, JsonVariant &json)
+    static AsyncCallbackJsonWebHandler* startUpdateHandler = nullptr;
+    if (!startUpdateHandler)
     {
-        JsonObject jsonObj = json.as<JsonObject>();
-        if (!jsonObj.containsKey("component") || !jsonObj.containsKey("componentInstanceIndex"))
+        startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [](AsyncWebServerRequest *request, JsonVariant &json)
         {
-            request->send(400, "text/plain", "Missing 'component' or 'componentInstanceIndex' in JSON body");
-            return;
-        }
+            JsonObject jsonObj = json.as<JsonObject>();
+            if (!jsonObj.containsKey("component") || !jsonObj.containsKey("componentInstanceIndex"))
+            {
+                request->send(400, "text/plain", "Missing 'component' or 'componentInstanceIndex' in JSON body");
+                return;
+            }
 
-        String component = jsonObj["component"].as<String>();
-        int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
+            String component = jsonObj["component"].as<String>();
+            int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
 
-        DynamicJsonDocument doc(512);
-        int resultCode = 200;
-        bool componentValid = updateHandling_findComponentByName(component);
-        if (componentValid)
-        {
-            updateHandling_startUpdate(component, componentInstanceIndex);
-            doc["status"] = "ok";
-            doc["message"] = "Update for " + component + " started";
-        }
-        else
-        {
-            doc["status"] = "error";
-            doc["message"] = "Invalid component \"" + component + "\"";
-            resultCode = 400;
-        }
+            DynamicJsonDocument doc(512);
+            int resultCode = 200;
+            bool componentValid = updateHandling_findComponentByName(component);
+            if (componentValid)
+            {
+                updateHandling_startUpdate(component, componentInstanceIndex);
+                doc["status"] = "ok";
+                doc["message"] = "Update for " + component + " started";
+            }
+            else
+            {
+                doc["status"] = "error";
+                doc["message"] = "Invalid component \"" + component + "\"";
+                resultCode = 400;
+            }
 
-        String response;
-        serializeJson(doc, response);
-        request->send(resultCode, "application/json", response);
-    });
-    server.addHandler(startUpdateHandler);
+            String response;
+            serializeJson(doc, response);
+            request->send(resultCode, "application/json", response);
+        });
+        server.addHandler(startUpdateHandler);
+    }
+
+    /*--------------------------------------------------------------------*/
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        String response = updateHandling_getUpdateStatusJson(updateStatus);
-        request->send(200, "application/json", response);
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        DynamicJsonDocument doc(256);
+        updateHandling_prepareStatusDoc(updateStatus, doc);
+        serializeJson(doc, *response);
+        request->send(response);
     });
+
+    /*--------------------------------------------------------------------*/
 
     server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        DynamicJsonDocument doc(2048);
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        // Using a pointer for the doc to keep stack usage minimal
+        DynamicJsonDocument doc(1024);
         JsonArray componentsArray = doc.createNestedArray("components");
 
         size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
@@ -396,11 +422,11 @@ void updateHandling_initWebserverEndpoints()
                 versionsArray.add(currentVersionsArray[i][j]);
             }
         }
-
-        String response;
-        serializeJson(doc, response);
-        request->send(200, "application/json", response);
+        serializeJson(doc, *response);
+        request->send(response);
     });
+
+    /*--------------------------------------------------------------------*/
 
     updateHandling_initWebserverEndpoints_Part2();
 }
@@ -437,6 +463,7 @@ void updateHandling_loop()
         #ifdef DEBUG_OUTPUT
             if(result)
             {
+                Serial.println("[Update Handling] Fetching version infos successful:");
                 for(size_t i = 0; i < count; ++i)
                 {
                     update_info_t &info = *updateInfos[i];
@@ -455,7 +482,7 @@ void updateHandling_loop()
             }
             else
             {
-                Serial.println("Fetching version infos failed");
+                Serial.println("[Update Handling] Fetching version infos failed");
             }
         #endif
         updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
