@@ -5,6 +5,7 @@
 #include "config.h"
 #include "main.h"
 #include "updateHandling.h"
+#include "part2ActionHub.h"
 #include "certs.h"
 
 AsyncWebServer server(80);
@@ -95,6 +96,7 @@ void wifiHandling_onConnected()
         wifiHandling_initWebserverFiles();
         main_initWebserverEndpoints();
         updateHandling_initWebserverEndpoints();
+        part2ActionHub_initWebserverEndpoints();
         server.begin();
         webserverStarted = true;
     }
@@ -129,8 +131,6 @@ void wifiHandling_init()
     delay(100);
 
     clientSecure.setTrustAnchors(&certList);
-    // Limit SSL buffers to save ~20KB of RAM. 4096 is usually enough for downloads.
-    clientSecure.setBufferSizes(1024, 4096);
 
     #ifdef DEBUG_OUTPUT
         wifiManager.setDebugOutput(true);

@@ -113,7 +113,84 @@ bool part2ActionHub_connectToAP(const String& ssid)
 
 /**********************************************************************/
 
-bool part2ActionHub_runUpdate()
+bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
+{
+    WiFiClient client;
+    HTTPClient http;
+
+    IPAddress gatewayIp = WiFi.gatewayIP();
+    String actionUrl = "http://" + gatewayIp.toString() + PART2ACTIONHUB_CURRENT_ACTION_ENDPOINT;
+
+    #ifdef DEBUG_OUTPUT
+        Serial.print("[Part2 ActionHub] Gateway IP: ");
+        Serial.println(gatewayIp.toString());
+        Serial.print("[Part2 ActionHub] Fetching action from: ");
+        Serial.println(actionUrl);
+    #endif
+
+    if (!http.begin(client, actionUrl))
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println("[Part2 ActionHub] HTTP begin() failed.");
+        #endif
+        return false;
+    }
+
+    // Follow redirects and set a reasonable timeout
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(5000); 
+
+    int httpCode = http.GET();
+    if (httpCode <= 0)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.print("[Part2 ActionHub] HTTP Error: ");
+            Serial.println(http.errorToString(httpCode));
+        #endif
+        http.end();
+        return false;
+    }
+
+    #ifdef DEBUG_OUTPUT 
+        Serial.print("[Part2 ActionHub] HTTP Status: ");
+        Serial.println(httpCode);
+    #endif
+    if (httpCode != HTTP_CODE_OK)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("[Part2 ActionHub] Unexpected HTTP Status: %d\n", httpCode);
+        #endif
+        http.end();
+        return false;
+    }
+
+    String payload = http.getString();
+    payload.trim();
+    int receivedVal = payload.toInt();  // toInt() returns 0, if failed. This will lead to action NONE (this is ok here).    
+    if (receivedVal < PART2ACTIONHUB_ACTION_NONE || receivedVal > PART2ACTIONHUB_ACTION_UPDATE)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("[Part2 ActionHub] Action out of range: %d\n", receivedVal);
+        #endif
+        action = PART2ACTIONHUB_ACTION_NONE;
+    }
+    else
+    {
+        action = static_cast<Part2ActionHubAction>(receivedVal);
+    }
+
+    #ifdef DEBUG_OUTPUT
+        Serial.print("[Part2 ActionHub] Action received: ");
+        Serial.println((int)action);
+    #endif
+
+    http.end();
+    return true;
+}
+
+/**********************************************************************/
+
+bool part2ActionHub_runAction()
 {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -129,5 +206,19 @@ bool part2ActionHub_runUpdate()
         return false;
     }
     
-    return updateHandling_performUpdate();
+    Part2ActionHubAction requestedAction = PART2ACTIONHUB_ACTION_NONE;
+    if (!part2ActionHub_getRequestedAction(requestedAction))
+    {
+        return false;
+    }
+
+    bool result = true;
+    switch (requestedAction)
+    {
+        case PART2ACTIONHUB_ACTION_UPDATE:
+            result = updateHandling_performUpdate();
+            break;
+        default: break;
+    }
+    return result;
 }

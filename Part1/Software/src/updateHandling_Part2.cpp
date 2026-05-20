@@ -264,7 +264,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
         }
     #endif
 
-    if(!part2ActionHub_startAP()) { return false; }
+    if(!part2ActionHub_startAP(PART2ACTIONHUB_ACTION_UPDATE)) { return false; }
 
     updateHandling_setUpdateStep(UPDATE_STEP_WAIT);
     UpdateStep lastStep = updateStatus.updateStep;

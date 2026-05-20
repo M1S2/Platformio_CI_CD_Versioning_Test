@@ -39,6 +39,6 @@ void loop()
 
     if(cnt == 10)
     {
-        part2ActionHub_runUpdate();
+        part2ActionHub_runAction();
     }
 }

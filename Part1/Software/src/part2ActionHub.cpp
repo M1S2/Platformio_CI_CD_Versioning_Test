@@ -1,14 +1,34 @@
 #include <ESP8266WiFi.h>
 #include "part2ActionHub.h"
+#include "wifiHandling.h"
 #include "config.h"
 
 bool part2ActionHub_isAPOpen = false;
 String part2ActionHub_ApSsid;
+Part2ActionHubAction part2ActionHub_currentAction = PART2ACTIONHUB_ACTION_NONE;
 
 unsigned long part2ActionHub_APStartedAt = 0;
 
-bool part2ActionHub_startAP()
+
+void part2ActionHub_initWebserverEndpoints()
 {
+    server.on("/actionHub/current_action", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        if(!part2ActionHub_isAPOpen)
+        {
+            request->send(404, "text/plain", "Action hub not open");
+            return;
+        }
+        request->send(200, "text/plain", String(part2ActionHub_currentAction).c_str());
+    });
+}
+
+/**********************************************************************/
+
+bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
+{
+    part2ActionHub_currentAction = currentAction;
+
     if (part2ActionHub_isAPOpen)
     {
         #ifdef DEBUG_OUTPUT
@@ -77,6 +97,8 @@ bool part2ActionHub_startAP()
 
 bool part2ActionHub_stopAP()
 {
+    part2ActionHub_currentAction = PART2ACTIONHUB_ACTION_NONE;
+
     if (!part2ActionHub_isAPOpen)
     {
         #ifdef DEBUG_OUTPUT
