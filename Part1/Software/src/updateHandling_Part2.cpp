@@ -117,18 +117,9 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         Serial.printf("[Update Handling Part2] Stream successfully opened, %d bytes to download\n", contentLength);
     #endif
 
-    // Allocate buffer on heap (instead of creating it on the stack with uint8_t buffer[512])
-    size_t bufferSize = 512;
-    uint8_t *buffer = (uint8_t *)malloc(bufferSize);
-    if (!buffer)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] Could not allocate download buffer (out of memory)");
-        #endif
-        file.close();
-        http.end();
-        return false;
-    }
+    // Stack-Puffer nutzen, um Heap-Fragmentierung während des SSL-Downloads zu vermeiden
+    const size_t bufferSize = 512;
+    uint8_t buffer[bufferSize];
 
     uint32_t totalWritten = 0;
     static unsigned long lastProgressEventTime = 0;
@@ -150,7 +141,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
             
             unsigned long currentTime = millis();
-            if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS || totalWritten == (uint32_t)contentLength)
+            if ((currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS || totalWritten == (uint32_t)contentLength))
             {
                 updateHandling_part2ReportProgress(percent);
                 lastProgressEventTime = currentTime;
@@ -162,9 +153,17 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         yield();
     }
 
-    free(buffer);
     file.close();
     http.end();
+
+    // Check if the download was actually complete
+    if (contentLength > 0 && totalWritten < (uint32_t)contentLength)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n", totalWritten, contentLength);
+        #endif
+        return false;
+    }
 
     // Check MD5 hash after download
     String downloadedMd5 = calculateFileMD5(filePath);

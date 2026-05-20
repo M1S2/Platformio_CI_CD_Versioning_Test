@@ -86,11 +86,11 @@ void updateHandling_sendUpdateStatusEvent()
 
     if (events.count() > 0)
     {
-        StaticJsonDocument<256> doc;
+        DynamicJsonDocument doc(256);
         updateHandling_prepareStatusDoc(updateStatus, doc);
-        char buffer[256];
-        serializeJson(doc, buffer, sizeof(buffer));
-        events.send(buffer, SERVER_EVENT_UPDATE_STATUS);
+        String output;
+        serializeJson(doc, output);
+        events.send(output.c_str(), SERVER_EVENT_UPDATE_STATUS);
     }
     else
     {

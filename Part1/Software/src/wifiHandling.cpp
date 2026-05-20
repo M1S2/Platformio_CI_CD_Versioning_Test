@@ -131,6 +131,10 @@ void wifiHandling_init()
     delay(100);
 
     clientSecure.setTrustAnchors(&certList);
+    // RX muss 16KB sein, da GitHub/S3 TLS-Records in voller Größe senden.
+    // TX auf 512B reduziert, um Heap für den Webserver freizuhalten.
+    // Total SSL RAM: 16.5 KB.
+    clientSecure.setBufferSizes(16384, 512);
 
     #ifdef DEBUG_OUTPUT
         wifiManager.setDebugOutput(true);
