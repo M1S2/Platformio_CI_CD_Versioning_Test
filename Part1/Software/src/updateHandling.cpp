@@ -59,55 +59,6 @@ bool requestUpdate = false;
 
 /**********************************************************************/
 
-void updateHandling_sendProgressEvent(float progress)
-{
-    if (events.count() > 0)
-    {
-        String payload = String(progress, 2);
-        events.send(payload.c_str(), SERVER_EVENT_UPDATE_PROGRESS);
-    }
-}
-
-void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument &doc)
-{
-    doc["channel"] = status.currentUpdateChannel;
-    doc["state"] = status.state;
-    doc["currentComponent"] = status.currentComponent;
-    doc["currentComponentInstanceIndex"] = status.currentComponentInstanceIndex;
-    doc["updateStep"] = status.updateStep;
-    doc["updateProgress"] = status.updateProgress;
-}
-
-void updateHandling_sendUpdateStatusEvent()
-{
-    #ifdef DEBUG_OUTPUT
-        Serial.printf("[Update Handling] Sending update status event (Heap: %u, MaxBlock: %u)\n", ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
-    #endif
-
-    if (events.count() > 0)
-    {
-        StaticJsonDocument<256> doc;
-        updateHandling_prepareStatusDoc(updateStatus, doc);
-        String output;
-        serializeJson(doc, output);
-        events.send(output.c_str(), SERVER_EVENT_UPDATE_STATUS);
-    }
-    else
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling] No event connected. Not sending update status event.");
-        #endif
-    }
-}
-
-void updateHandling_setUpdateStep(UpdateStep step)
-{
-    updateStatus.updateStep = step;
-    updateHandling_sendUpdateStatusEvent();
-}
-
-/**********************************************************************/
-
 bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
 {
     #ifdef DEBUG_OUTPUT
@@ -289,6 +240,18 @@ void updateHandling_clearVersionInfos()
 
 /**********************************************************************/
 
+void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument &doc)
+{
+    doc["channel"] = status.currentUpdateChannel;
+    doc["state"] = status.state;
+    doc["currentComponent"] = status.currentComponent;
+    doc["currentComponentInstanceIndex"] = status.currentComponentInstanceIndex;
+    doc["updateStep"] = status.updateStep;
+    doc["updateProgress"] = status.updateProgress;
+}
+
+/**********************************************************************/
+
 void updateHandling_initWebserverEndpoints()
 {
     // Handler for /update/set_channel (POST with JSON-Body)
@@ -444,7 +407,6 @@ void updateHandling_startFetchingNewestVersionInfos()
     updateStatus.currentComponent = "";
     // Set state to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     updateStatus.state = UPDATE_STATE_CHECKING;
-    updateHandling_sendUpdateStatusEvent();
 }
 
 void updateHandling_startUpdate(String component, int componentInstanceIndex)
@@ -453,7 +415,6 @@ void updateHandling_startUpdate(String component, int componentInstanceIndex)
     updateStatus.currentComponentInstanceIndex = componentInstanceIndex;
     // Set state to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server or by performing the update itself, which can take a long time)
     updateStatus.state = UPDATE_STATE_UPDATING;
-    updateHandling_sendUpdateStatusEvent();
 }
 
 /**********************************************************************/
@@ -491,12 +452,10 @@ void updateHandling_loop()
             }
         #endif
         updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
-        updateHandling_sendUpdateStatusEvent();
     }
     else if(updateStatus.state == UPDATE_STATE_UPDATING)
     {
         bool result = updateHandling_performUpdate(updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
         updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
-        updateHandling_sendUpdateStatusEvent();
     }
 }

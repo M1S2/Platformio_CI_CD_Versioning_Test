@@ -37,11 +37,13 @@ String calculateFileMD5(const String &filePath)
     return md5.toString();
 }
 
+#if false
 void updateHandling_part2ReportProgress(float stepProgress)
 {
     updateStatus.updateProgress = stepProgress;
     updateHandling_sendProgressEvent(updateStatus.updateProgress);
 }
+#endif
 
 bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
 {
@@ -122,12 +124,11 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         Serial.printf("[Update Handling Part2] Stream successfully opened, %d bytes to download\n", contentLength);
     #endif
 
-    // Stack-Puffer nutzen, um Heap-Fragmentierung während des SSL-Downloads zu vermeiden
+    // Use stack buffer to avoid heap fragmentation during SSL download
     const size_t bufferSize = 512;
     uint8_t buffer[bufferSize];
 
     uint32_t totalWritten = 0;
-    static unsigned long lastProgressEventTime = 0;
 
     while (http.connected() || (stream && stream->available()))
     {
@@ -144,13 +145,8 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             totalWritten += len;
 
             float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
-            
-            unsigned long currentTime = millis();
-            if ((currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS || totalWritten == (uint32_t)contentLength))
-            {
-                updateHandling_part2ReportProgress(percent);
-                lastProgressEventTime = currentTime;
-            }
+            updateStatus.updateProgress = percent;
+
             #ifdef DEBUG_OUTPUT
                 Serial.printf("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
             #endif
@@ -203,7 +199,7 @@ void updateHandling_initWebserverEndpoints_Part2()
             request->send(404, "text/plain", "File not found");
             return;
         }
-        updateHandling_setUpdateStep(UPDATE_STEP_FW);
+        updateStatus.updateStep = UPDATE_STEP_FW;
         request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });
     
@@ -226,11 +222,10 @@ void updateHandling_initWebserverEndpoints_Part2()
         if (request->hasParam("progress", true))
         {
             updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
         }
         if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
         {
-            updateHandling_setUpdateStep(UPDATE_STEP_FINISHED);
+            updateStatus.updateStep = UPDATE_STEP_FINISHED;
         }
         request->send(200, "text/plain", "OK");
     });
@@ -258,7 +253,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
 
     currentUpdateInfoPart2 = &updateInfo;
 
-    updateHandling_setUpdateStep(UPDATE_STEP_PREPARE);
+    updateStatus.updateStep = UPDATE_STEP_PREPARE;
     if(!updateHandling_downloadFileToLittleFS(updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, updateInfo.fw_md5)) { return false; }
 
     #ifdef DEBUG_OUTPUT
@@ -270,7 +265,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
 
     if(!part2ActionHub_startAP(PART2ACTIONHUB_ACTION_UPDATE)) { return false; }
 
-    updateHandling_setUpdateStep(UPDATE_STEP_WAIT);
+    updateStatus.updateStep = UPDATE_STEP_WAIT;
     UpdateStep lastStep = updateStatus.updateStep;
     while(updateStatus.updateStep != UPDATE_STEP_FINISHED)
     {
@@ -279,14 +274,13 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
             #ifdef DEBUG_OUTPUT
                 Serial.printf("[Update Handling Part2] Update step changed to %d\n", updateStatus.updateStep);
             #endif
-            updateHandling_sendUpdateStatusEvent();
             lastStep = updateStatus.updateStep;
         }
 
         if(part2ActionHub_handleAPTimeout())
         {
             // The action hub was closed by timeout.
-            updateHandling_setUpdateStep(UPDATE_STEP_NONE);
+            updateStatus.updateStep = UPDATE_STEP_NONE;
         }
         yield();
     }

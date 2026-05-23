@@ -35,16 +35,13 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
 
-    updateHandling_setUpdateStep(UPDATE_STEP_FW);
-
-    static unsigned long lastProgressEventTime = 0;
+    updateStatus.updateStep = UPDATE_STEP_FW;
 
     ESPhttpUpdate.onStart([&updateInfo]()
     {
         if (!updateInfo.has_fs_update || (updateInfo.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FS))
         {
             updateStatus.updateProgress = 0.0f;
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
         }
     });
     ESPhttpUpdate.onEnd([&updateInfo]()
@@ -52,7 +49,6 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
         if (!updateInfo.has_fs_update || (updateInfo.has_fs_update && updateStatus.updateStep == UPDATE_STEP_FW))
         {
             updateStatus.updateProgress = 100.0f;
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
         }
     });
     ESPhttpUpdate.onProgress([&updateInfo](int cur, int total)
@@ -78,15 +74,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
                 updateStatus.updateProgress = 50.0f + (percent * 0.5f);
             }
         }
-        
-        // Send event only every UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS
-        unsigned long currentTime = millis();
-        if (currentTime - lastProgressEventTime >= UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS)
-        {
-            updateHandling_sendProgressEvent(updateStatus.updateProgress);
-            lastProgressEventTime = currentTime;
-        }
-        
+                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
@@ -98,7 +86,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     bool fsUpdateResult = true;
     if(updateInfo.has_fs_update)
     {
-        updateHandling_setUpdateStep(UPDATE_STEP_FS);
+        updateStatus.updateStep = UPDATE_STEP_FS;
         #ifdef DEBUG_OUTPUT
             Serial.println("Update file system...");
         #endif
@@ -123,11 +111,10 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
                 break;
         }
         fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
-        updateHandling_setUpdateStep(UPDATE_STEP_FW);
+        updateStatus.updateStep = UPDATE_STEP_FW;
     }
 
     bool fwUpdateResult = true;
-    updateHandling_sendUpdateStatusEvent();
     #ifdef DEBUG_OUTPUT
         Serial.println("Update firmware...");
     #endif
@@ -157,7 +144,6 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     if(fwUpdateResult)
     {
         updateStatus.state = UPDATE_STATE_RESTARTING;
-        updateHandling_sendUpdateStatusEvent();
     
         // Wait for some seconds to ensure that the HTTP response is sent completely before restarting.
         // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
@@ -171,7 +157,6 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     else
     {
         updateStatus.state = UPDATE_STATE_ERROR;
-        updateHandling_sendUpdateStatusEvent();
     }
 
     return fsUpdateResult && fwUpdateResult;

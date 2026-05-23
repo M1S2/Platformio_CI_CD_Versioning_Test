@@ -32,8 +32,6 @@ enum UpdateStep
 #define UPDATE_COMPONENT_NAME_PART1 "part1"
 #define UPDATE_COMPONENT_NAME_PART2 "part2"
 
-#define UPDATE_PROGRESS_INTERVALL_DURING_UPDATE_MS  200     // Send the update progress to the web interface every x ms during an update
-
 typedef struct update_status
 {
     UpdateChannel currentUpdateChannel = UPDATE_CHANNEL_DEV;     // Current update channel (stable or dev)
@@ -64,10 +62,5 @@ void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();
 void updateHandling_startFetchingNewestVersionInfos();
 void updateHandling_startUpdate(String component, int componentInstanceIndex);
-
-void updateHandling_sendProgressEvent(float progress);
-void updateHandling_sendUpdateStatusEvent();
-
-void updateHandling_setUpdateStep(UpdateStep step);
 
 #endif

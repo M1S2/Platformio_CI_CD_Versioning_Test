@@ -23,70 +23,68 @@ const UpdateStep =
     FINISHED: 5
 };
 
-let updateProgressSource = null;
+let lastUpdateState = UpdateState.IDLE;
+let currentlyFetchingUpdateInfo = false;
 
 /**********************************************************************/
 
 function bodyLoaded()
 {
-	initUpdateProgressEvents();
-	getUpdateStatusAndInfo();
+	currentlyFetchingUpdateInfo = false;
+	pollUpdateInfo();
+	pollUpdateStatus(true);
 	checkUpdate();
 }
 
 /**********************************************************************/
 
-function initUpdateProgressEvents()
+async function pollUpdateStatus(cyclic = true)
 {
-	if (updateProgressSource)
+	try
 	{
-		return;
-	}
-
-	updateProgressSource = new EventSource('/events');
-	updateProgressSource.addEventListener('updateProgress', event =>
-	{
-		const progressValue = parseFloat(event.data);
-		if (!Number.isNaN(progressValue))
+		const statusRes = await fetch('/update/status');
+		if (statusRes.ok)
 		{
-			const progressBar = document.getElementById('update_progress');
-			if (progressBar)
-			{
-				progressBar.value = progressValue;
-			}
-		}
-	});
-	updateProgressSource.addEventListener('updateStatus', event =>
-	{
-		try
-		{
-			const updateStatus = JSON.parse(event.data);
+			const updateStatus = await statusRes.json();
 			displayUpdateStatus(updateStatus);
+
+			// Reload the update infos to get the new versions:
+			// - If a check for updates has finished
+			// - If an update has finished (and thus a new version is now available)
+			// - If a restart has finished
+			if (currentlyFetchingUpdateInfo ||
+				(lastUpdateState === UpdateState.CHECKING && updateStatus.state === UpdateState.IDLE) ||
+			   	(lastUpdateState === UpdateState.UPDATING && updateStatus.state === UpdateState.IDLE) ||
+			    (lastUpdateState === UpdateState.RESTARTING && updateStatus.state === UpdateState.IDLE))
+			{
+				currentlyFetchingUpdateInfo = false;
+				await pollUpdateInfo();
+			}
+			lastUpdateState = updateStatus.state;
 		}
-		catch (e)
-		{
-			console.error('Failed to parse updateStatus JSON:', e);
-		}
-	});
-	updateProgressSource.onerror = () =>
+	}
+	catch (e) { console.error('Status polling error:', e); }
+	if (cyclic)
 	{
-		console.warn('EventSource connection for updateProgress failed or closed');
-	};
+		// Use setTimeout to poll again after a delay, instead of setInterval, to avoid overlapping calls if one takes too long
+		setTimeout(pollUpdateStatus, 1000);
+	}
 }
 
 /**********************************************************************/
 
-async function getUpdateStatusAndInfo()
+async function pollUpdateInfo()
 {
-	const statusRes = await fetch('/update/status');
-	const updateStatus = await statusRes.json();
-
-	displayUpdateStatus(updateStatus);
-
-	const infoRes = await fetch('/update/info');
-	const updateInfo = await infoRes.json();
-
-	displayUpdateInfos(updateInfo);
+	try
+	{
+		const infoRes = await fetch('/update/info');
+		if (infoRes.ok)
+		{
+			const updateInfo = await infoRes.json();
+			displayUpdateInfos(updateInfo);
+		}
+	}
+	catch (e) { console.error('Status polling error:', e); }
 }
 
 /**********************************************************************/
@@ -274,30 +272,15 @@ async function setUpdateChannel(channel)
 		},
 		body: JSON.stringify({ channel: channel })
 	});
-  	getUpdateStatusAndInfo();
+	pollUpdateInfo();
 }
 
 /**********************************************************************/
 
 async function checkUpdate()
 {
-  	await fetch('/update/check', { method: 'POST' })
-	.then(async response =>
-	{
-		if (response.ok)
-		{
-			let updateStatus;
-			do
-			{
-				await new Promise(resolve => setTimeout(resolve, 500));
-				const res = await fetch('/update/status');
-				updateStatus = await res.json();
-			}
-			while (updateStatus.state === UpdateState.CHECKING);
-
-			await getUpdateStatusAndInfo();
-		}
-	});
+	await fetch('/update/check', { method: 'POST' });
+	currentlyFetchingUpdateInfo = true;
 }
 
 /**********************************************************************/
