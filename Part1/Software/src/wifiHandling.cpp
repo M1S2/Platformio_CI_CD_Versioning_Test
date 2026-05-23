@@ -15,7 +15,7 @@ AsyncWiFiManager wifiManager(&server, &dns);
 
 // Create a list of certificates with the server certificate
 X509List certList(ROOT_CA_CERT);
-WiFiClientSecure clientSecure;
+Session session;                // Session object for SSL client
 
 bool wifiConfig_isAPOpen;
 WifiState wifiHandling_wifiState = WIFI_DISCONNECTED;
@@ -129,12 +129,6 @@ void wifiHandling_init()
     WiFi.mode(WIFI_STA);
     WiFi.persistent(true);
     delay(100);
-
-    clientSecure.setTrustAnchors(&certList);
-    // RX muss 16KB sein, da GitHub/S3 TLS-Records in voller Größe senden.
-    // TX auf 512B reduziert, um Heap für den Webserver freizuhalten.
-    // Total SSL RAM: 16.5 KB.
-    clientSecure.setBufferSizes(16384, 512);
 
     #ifdef DEBUG_OUTPUT
         wifiManager.setDebugOutput(true);

@@ -69,6 +69,11 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         }
     }
 
+    WiFiClientSecure clientSecure;
+    clientSecure.setSession(&session);
+    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setBufferSizes(16384, 512);
+
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);

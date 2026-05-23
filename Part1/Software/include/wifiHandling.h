@@ -6,7 +6,9 @@
 
 extern AsyncWebServer server;
 extern AsyncEventSource events;
-extern WiFiClientSecure clientSecure;
+
+extern X509List certList;
+extern Session session;
 
 #define SERVER_EVENT_SOURCE                     "/events"
 #define SERVER_EVENT_UPDATE_PROGRESS            "updateProgress"

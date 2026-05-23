@@ -86,7 +86,7 @@ void updateHandling_sendUpdateStatusEvent()
 
     if (events.count() > 0)
     {
-        DynamicJsonDocument doc(256);
+        StaticJsonDocument<256> doc;
         updateHandling_prepareStatusDoc(updateStatus, doc);
         String output;
         serializeJson(doc, output);
@@ -161,6 +161,11 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
         Serial.printf("[Update Handling] Checking for %s update...\n", (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
     #endif
 
+    WiFiClientSecure clientSecure;
+    clientSecure.setSession(&session);
+    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setBufferSizes(1024, 512);
+
     HTTPClient http;
     http.setTimeout(10000); // 10 Seconds
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -181,7 +186,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     }
 
     // Parse directly from stream to save stack and heap memory
-    DynamicJsonDocument doc(1024);
+    StaticJsonDocument<1024> doc;
     DeserializationError err = deserializeJson(doc, http.getStream());
     http.end();
 
@@ -360,7 +365,7 @@ void updateHandling_initWebserverEndpoints()
             String component = jsonObj["component"].as<String>();
             int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
 
-            DynamicJsonDocument doc(512);
+            StaticJsonDocument<128> doc;
             int resultCode = 200;
             bool componentValid = updateHandling_findComponentByName(component);
             if (componentValid)
@@ -388,7 +393,7 @@ void updateHandling_initWebserverEndpoints()
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        DynamicJsonDocument doc(256);
+        StaticJsonDocument<256> doc;
         updateHandling_prepareStatusDoc(updateStatus, doc);
         serializeJson(doc, *response);
         request->send(response);
@@ -400,7 +405,7 @@ void updateHandling_initWebserverEndpoints()
     {
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         // Using a pointer for the doc to keep stack usage minimal
-        DynamicJsonDocument doc(1024);
+        StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
 
         size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);

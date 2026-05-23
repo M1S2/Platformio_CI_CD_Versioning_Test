@@ -90,6 +90,11 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
+    WiFiClientSecure clientSecure;
+    clientSecure.setSession(&session);
+    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setBufferSizes(16384, 512);
+
     bool fsUpdateResult = true;
     if(updateInfo.has_fs_update)
     {
