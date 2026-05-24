@@ -57,6 +57,54 @@ const size_t currentVersionsCounts[] = { sizeof(currentVersionsPart1) / sizeof(c
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
+UpdateQueue updateQueue;
+update_task_t currentUpdateTask;
+
+/**********************************************************************/
+
+bool UpdateQueue::push(const update_task_t &task)
+{
+    if (count >= UPDATE_QUEUE_SIZE)
+    {
+        return false;
+    }
+
+    queue[tail] = task;
+    tail = (tail + 1) % UPDATE_QUEUE_SIZE;
+    count++;
+    return true;
+}
+
+bool UpdateQueue::pop(update_task_t &task)
+{
+    if (count == 0)
+    {
+        return false;
+    }
+
+    task = queue[head];
+    head = (head + 1) % UPDATE_QUEUE_SIZE;
+    count--;
+    return true;
+}
+
+bool UpdateQueue::isEmpty() const
+{
+    return count == 0;
+}
+
+size_t UpdateQueue::size() const
+{
+    return count;
+}
+
+void UpdateQueue::clear()
+{
+    head = 0;
+    tail = 0;
+    count = 0;
+}
+
 /**********************************************************************/
 
 bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
@@ -355,11 +403,11 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        StaticJsonDocument<256> doc;
+        StaticJsonDocument<128> doc;
         updateHandling_prepareStatusDoc(updateStatus, doc);
-        serializeJson(doc, *response);
-        request->send(response);
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
     });
 
     /*--------------------------------------------------------------------*/
@@ -411,51 +459,77 @@ void updateHandling_startFetchingNewestVersionInfos()
 
 void updateHandling_startUpdate(String component, int componentInstanceIndex)
 {
-    updateStatus.currentComponent = component;
-    updateStatus.currentComponentInstanceIndex = componentInstanceIndex;
-    // Set state to perform the update in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server or by performing the update itself, which can take a long time)
-    updateStatus.state = UPDATE_STATE_UPDATING;
+    update_task_t newTask;
+    newTask.component = component;
+    newTask.componentInstanceIndex = componentInstanceIndex;
+    updateQueue.push(newTask);
 }
 
 /**********************************************************************/
 
 void updateHandling_loop()
 {
-    if(updateStatus.state == UPDATE_STATE_CHECKING)
+    switch (updateStatus.state)
     {
-        size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
-        bool result = updateHandling_fetchVersions(updateInfos, componentNames, count);
-
-        #ifdef DEBUG_OUTPUT
-            if(result)
+        case UPDATE_STATE_IDLE:
+        {
+            if(!updateQueue.isEmpty())
             {
-                Serial.println("[Update Handling] Fetching version infos successful:");
-                for(size_t i = 0; i < count; ++i)
+                updateQueue.pop(currentUpdateTask);
+                updateStatus.state = UPDATE_STATE_UPDATING;
+            }
+            break;
+        }
+        case UPDATE_STATE_CHECKING:
+        {
+            size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
+            bool result = updateHandling_fetchVersions(updateInfos, componentNames, count);
+
+            #ifdef DEBUG_OUTPUT
+                if(result)
                 {
-                    update_info_t &info = *updateInfos[i];
-                    Serial.printf("Component: %s\n", info.componentName.c_str());
-                    Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
-                    Serial.printf("  Version: %s\n", info.version.c_str());
-                    Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
-                    Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
-                    Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
-                    if(info.has_fs_update)
+                    Serial.println("[Update Handling] Fetching version infos successful:");
+                    for(size_t i = 0; i < count; ++i)
                     {
-                        Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
-                        Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                        update_info_t &info = *updateInfos[i];
+                        Serial.printf("Component: %s\n", info.componentName.c_str());
+                        Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
+                        Serial.printf("  Version: %s\n", info.version.c_str());
+                        Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
+                        Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
+                        Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
+                        if(info.has_fs_update)
+                        {
+                            Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
+                            Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                        }
                     }
                 }
-            }
-            else
-            {
-                Serial.println("[Update Handling] Fetching version infos failed");
-            }
-        #endif
-        updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
-    }
-    else if(updateStatus.state == UPDATE_STATE_UPDATING)
-    {
-        bool result = updateHandling_performUpdate(updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
-        updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
+                else
+                {
+                    Serial.println("[Update Handling] Fetching version infos failed");
+                }
+            #endif
+            updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
+            break;
+        }
+        case UPDATE_STATE_UPDATING:
+        {
+            // Get the parameters for the update from the currentUpdateTask struct, which should have been set by the HTTP request handler for /update/start before switching the state to UPDATE_STATE_UPDATING
+            updateStatus.currentComponent = currentUpdateTask.component;
+            updateStatus.currentComponentInstanceIndex = currentUpdateTask.componentInstanceIndex;
+
+            bool result = updateHandling_performUpdate(updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
+            updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
+            break;
+        }
+        case UPDATE_STATE_ERROR:
+        {
+            updateQueue.clear();
+            updateStatus.currentComponent = "";
+            updateStatus.currentComponentInstanceIndex = -1;
+            break;
+        }
+        default: break;
     }
 }

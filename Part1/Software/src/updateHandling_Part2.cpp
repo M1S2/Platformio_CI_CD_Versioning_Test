@@ -130,6 +130,9 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
 
     uint32_t totalWritten = 0;
 
+    static int lastLoggedPercent = -1;
+    lastLoggedPercent = -1;
+
     while (http.connected() || (stream && stream->available()))
     {
         if (contentLength > 0 && totalWritten >= (uint32_t)contentLength)
@@ -145,11 +148,17 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             totalWritten += len;
 
             float percent = (contentLength > 0) ? (100.0f * totalWritten / contentLength) : 0.0f;
-            updateStatus.updateProgress = percent;
-
-            #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
-            #endif
+            int currentPercentInt = (int)percent;
+            
+            // Only update status and log if percent changed to save memory pressure
+            if (currentPercentInt != lastLoggedPercent)
+            {
+                lastLoggedPercent = currentPercentInt;
+                updateStatus.updateProgress = percent;
+                #ifdef DEBUG_OUTPUT
+                    Serial.printf("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
+                #endif
+            }
         }
         yield();
     }

@@ -55,12 +55,36 @@ typedef struct update_info
 } update_info_t;
 
 extern update_status_t updateStatus;
-extern update_info_t updateInfo_Part1;
-extern update_info_t updateInfo_Part2;
 
 void updateHandling_initWebserverEndpoints();
 void updateHandling_loop();
 void updateHandling_startFetchingNewestVersionInfos();
 void updateHandling_startUpdate(String component, int componentInstanceIndex);
+
+/**********************************************************************/
+
+#define UPDATE_QUEUE_SIZE 10
+
+typedef struct update_task
+{
+    String component = "";               // Name of the component targeted by the update (e.g. "part1" or "part2")
+    int componentInstanceIndex = -1;     // Index of the component instance targeted by the update
+} update_task_t;
+
+class UpdateQueue
+{
+public:
+    bool push(const update_task_t &task);
+    bool pop(update_task_t &task);
+    bool isEmpty() const;
+    size_t size() const;
+    void clear();
+
+private:
+    update_task_t queue[UPDATE_QUEUE_SIZE];
+    size_t head = 0;
+    size_t tail = 0;
+    size_t count = 0;
+};
 
 #endif
