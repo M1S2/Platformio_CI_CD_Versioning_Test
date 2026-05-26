@@ -15,7 +15,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     if (!updateInfo.valid)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part1] No valid update info available");
+            Serial.println(F("[Update Handling Part1] No valid update info available"));
         #endif
         return false;
     }
@@ -23,14 +23,14 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part1] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+            Serial.println(F("[Update Handling Part1] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
         #endif
         return false;
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.printf("[Update Handling Part1] Performing update for component %s, index %d to version %s\n", component.c_str(), componentInstanceIndex, updateInfo.version.c_str());
-        Serial.printf("[Update Handling Part1] Free heap before SSL: %u bytes\n", ESP.getFreeHeap());
+        Serial.printf_P(PSTR("[Update Handling Part1] Performing update for component %s, index %d to version %s\n"), component.c_str(), componentInstanceIndex, updateInfo.version.c_str());
+        Serial.printf_P(PSTR("[Update Handling Part1] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
     #endif
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -68,7 +68,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
         lastLoggedPercent = currentPercentInt;
 
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n", cur, total, percent);
+            Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         #endif
         if(!updateInfo.has_fs_update)
         {
@@ -101,7 +101,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     {
         updateStatus.updateStep = UPDATE_STEP_FS;
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part1] Update file system...");
+            Serial.println(F("[Update Handling Part1] Update file system..."));
         #endif
         ESPhttpUpdate.setMD5sum(updateInfo.fs_md5);
         t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, updateInfo.url_fs);
@@ -109,17 +109,17 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
         {
             case HTTP_UPDATE_FAILED:
                 #ifdef DEBUG_OUTPUT
-                    Serial.printf("[Update Handling Part1] FS Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
+                    Serial.printf_P(PSTR("[Update Handling Part1] FS Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
                 #endif
                 break;
             case HTTP_UPDATE_NO_UPDATES:
                 #ifdef DEBUG_OUTPUT    
-                    Serial.println("[Update Handling Part1] No FS update available");
+                    Serial.println(F("[Update Handling Part1] No FS update available"));
                 #endif
                 break;
             case HTTP_UPDATE_OK:
                 #ifdef DEBUG_OUTPUT    
-                    Serial.println("[Update Handling Part1] FS Update ok");
+                    Serial.println(F("[Update Handling Part1] FS Update ok"));
                 #endif
                 break;
         }
@@ -129,7 +129,7 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
 
     bool fwUpdateResult = true;
     #ifdef DEBUG_OUTPUT
-        Serial.println("[Update Handling Part1] Update firmware...");
+        Serial.println(F("[Update Handling Part1] Update firmware..."));
     #endif
     ESPhttpUpdate.setMD5sum(updateInfo.fw_md5);
     ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
@@ -138,17 +138,17 @@ bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String compone
     {
         case HTTP_UPDATE_FAILED:
             #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling Part1] Update failed: %s\n", ESPhttpUpdate.getLastErrorString().c_str());
+                Serial.printf_P(PSTR("[Update Handling Part1] Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
             #endif
             break;
         case HTTP_UPDATE_NO_UPDATES:
             #ifdef DEBUG_OUTPUT    
-                Serial.println("[Update Handling Part1] No update available");
+                Serial.println(F("[Update Handling Part1] No update available"));
             #endif
             break;
         case HTTP_UPDATE_OK:
             #ifdef DEBUG_OUTPUT    
-                Serial.println("[Update Handling Part1] Update ok");
+                Serial.println(F("[Update Handling Part1] Update ok"));
             #endif
             break;
     }

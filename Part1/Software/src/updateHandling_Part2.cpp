@@ -24,7 +24,7 @@ String calculateFileMD5(const String &filePath)
     if (!file)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling Part2] Failed to open file %s for MD5 calculation\n", filePath.c_str());
+            Serial.printf_P(PSTR("[Update Handling Part2] Failed to open file %s for MD5 calculation\n"), filePath.c_str());
         #endif
         return "";
     }
@@ -48,7 +48,7 @@ void updateHandling_part2ReportProgress(float stepProgress)
 bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
 {
     #ifdef DEBUG_OUTPUT
-        Serial.println("[Update Handling Part2] Downloading file...");
+        Serial.println(F("[Update Handling Part2] Downloading file..."));
     #endif
 
     // Check, if the file already exists and the MD5 hash matches
@@ -58,14 +58,14 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
         if (currentMd5 == expectedMd5)
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n", filePath.c_str());
+                Serial.printf_P(PSTR("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n"), filePath.c_str());
             #endif
             return true;
         }
         else
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n", filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
+                Serial.printf_P(PSTR("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n"), filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
             #endif
             LittleFS.remove(filePath); // Remove old file
         }
@@ -83,7 +83,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (!http.begin(clientSecure, url))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] http.begin failed");
+            Serial.println(F("[Update Handling Part2] http.begin failed"));
         #endif
         http.end();
         return false;
@@ -93,7 +93,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (httpCode != HTTP_CODE_OK)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n", httpCode, http.errorToString(httpCode).c_str());
+            Serial.printf_P(PSTR("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
         #endif
         http.end();
         return false;
@@ -103,7 +103,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (!file)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] Failed to open file");
+            Serial.println(F("[Update Handling Part2] Failed to open file"));
         #endif
         http.end();
         return false;
@@ -114,14 +114,14 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (stream == nullptr)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] Failed to get stream pointer");
+            Serial.println(F("[Update Handling Part2] Failed to get stream pointer"));
         #endif
         file.close();
         http.end();
         return false;
     }
     #ifdef DEBUG_OUTPUT
-        Serial.printf("[Update Handling Part2] Stream successfully opened, %d bytes to download\n", contentLength);
+        Serial.printf_P(PSTR("[Update Handling Part2] Stream successfully opened, %d bytes to download\n"), contentLength);
     #endif
 
     // Use stack buffer to avoid heap fragmentation during SSL download
@@ -156,7 +156,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
                 lastLoggedPercent = currentPercentInt;
                 updateStatus.updateProgress = percent;
                 #ifdef DEBUG_OUTPUT
-                    Serial.printf("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n", totalWritten, percent);
+                    Serial.printf_P(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
                 #endif
             }
         }
@@ -170,7 +170,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (contentLength > 0 && totalWritten < (uint32_t)contentLength)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n", totalWritten, contentLength);
+            Serial.printf_P(PSTR("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n"), totalWritten, contentLength);
         #endif
         return false;
     }
@@ -180,14 +180,14 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     if (downloadedMd5 != expectedMd5)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n", expectedMd5.c_str(), downloadedMd5.c_str());
+            Serial.printf_P(PSTR("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n"), expectedMd5.c_str(), downloadedMd5.c_str());
         #endif
         LittleFS.remove(filePath); // Defect file -> delete it
         return false;
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.println("[Update Handling Part2] Download finished and MD5 verified.");
+        Serial.println(F("[Update Handling Part2] Download finished and MD5 verified."));
     #endif
     return true;
 }
@@ -247,7 +247,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     if (!updateInfo.valid)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] No valid update info available");
+            Serial.println(F("[Update Handling Part2] No valid update info available"));
         #endif
         return false;
     }
@@ -255,7 +255,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling Part2] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+            Serial.println(F("[Update Handling Part2] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
         #endif
         return false;
     }
@@ -268,7 +268,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     #ifdef DEBUG_OUTPUT
         if(updateInfo.has_fs_update)
         {
-            Serial.println("[Update Handling Part2] Filesystem update not supported yet for part 2");
+            Serial.println(F("[Update Handling Part2] Filesystem update not supported yet for part 2"));
         }
     #endif
 
@@ -281,7 +281,7 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
         if(updateStatus.updateStep != lastStep)
         {
             #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling Part2] Update step changed to %d\n", updateStatus.updateStep);
+                Serial.printf_P(PSTR("[Update Handling Part2] Update step changed to %d\n"), updateStatus.updateStep);
             #endif
             lastStep = updateStatus.updateStep;
         }

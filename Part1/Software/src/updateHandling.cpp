@@ -110,7 +110,7 @@ void UpdateQueue::clear()
 bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
 {
     #ifdef DEBUG_OUTPUT
-        Serial.printf("[Update Handling] Looking for component \"%s\"...\n", componentName.c_str());
+        Serial.printf_P(PSTR("[Update Handling] Looking for component \"%s\"...\n"), componentName.c_str());
     #endif
 
     bool componentValid = false;
@@ -128,7 +128,7 @@ bool updateHandling_findComponentByName(String componentName, update_info_t* fou
             }
 
             #ifdef DEBUG_OUTPUT
-                Serial.printf("[Update Handling] Found component \"%s\" at index %d\n", componentName.c_str(), i);
+                Serial.printf_P(PSTR("[Update Handling] Found component \"%s\" at index %d\n"), componentName.c_str(), i);
             #endif
             break;
         }
@@ -143,7 +143,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Update Handling] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later...");
+            Serial.println(F("[Update Handling] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
         #endif
         return false;
     }
@@ -157,7 +157,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     String manifestUrl = String(baseUrl) + manifestFilename;
 
     #ifdef DEBUG_OUTPUT
-        Serial.printf("[Update Handling] Checking for %s update...\n", (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
+        Serial.printf_P(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
     #endif
 
     WiFiClientSecure clientSecure;
@@ -174,7 +174,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     #ifdef DEBUG_OUTPUT
         if (httpCode <= 0)
         {
-            Serial.printf("[Update Handling] HTTP error: Code = %d, Message = %s\n", httpCode, http.errorToString(httpCode).c_str());
+            Serial.printf_P(PSTR("[Update Handling] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
         }
     #endif
 
@@ -246,7 +246,7 @@ bool updateHandling_performUpdate(String component = "", int componentInstanceIn
     if(!updateHandling_findComponentByName(component, nullptr, &foundIndex))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling] No update info found for component \"%s\"\n", component.c_str());
+            Serial.printf_P(PSTR("[Update Handling] No update info found for component \"%s\"\n"), component.c_str());
         #endif
         return false;
     }
@@ -263,7 +263,7 @@ bool updateHandling_performUpdate(String component = "", int componentInstanceIn
     else
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Update Handling] Update for component \"%s\" not supported\n", component.c_str());
+            Serial.printf_P(PSTR("[Update Handling] Update for component \"%s\" not supported\n"), component.c_str());
         #endif
         return false;
     }
@@ -414,7 +414,6 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
         // Using a pointer for the doc to keep stack usage minimal
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
@@ -438,8 +437,10 @@ void updateHandling_initWebserverEndpoints()
                 versionsArray.add(currentVersionsArray[i][j]);
             }
         }
-        serializeJson(doc, *response);
-        request->send(response);
+
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
     });
 
     /*--------------------------------------------------------------------*/
@@ -488,26 +489,26 @@ void updateHandling_loop()
             #ifdef DEBUG_OUTPUT
                 if(result)
                 {
-                    Serial.println("[Update Handling] Fetching version infos successful:");
+                    Serial.println(F("[Update Handling] Fetching version infos successful:"));
                     for(size_t i = 0; i < count; ++i)
                     {
                         update_info_t &info = *updateInfos[i];
-                        Serial.printf("Component: %s\n", info.componentName.c_str());
-                        Serial.printf("  Valid: %s\n", info.valid ? "true" : "false");
-                        Serial.printf("  Version: %s\n", info.version.c_str());
-                        Serial.printf("  Has FS Update: %s\n", info.has_fs_update ? "true" : "false");
-                        Serial.printf("  URL FW: %s\n", info.url_fw.c_str());
-                        Serial.printf("  MD5 FW: %s\n", info.fw_md5.c_str());
+                        Serial.printf_P(PSTR("Component: %s\n"), info.componentName.c_str());
+                        Serial.printf_P(PSTR("  Valid: %s\n"), info.valid ? "true" : "false");
+                        Serial.printf_P(PSTR("  Version: %s\n"), info.version.c_str());
+                        Serial.printf_P(PSTR("  Has FS Update: %s\n"), info.has_fs_update ? "true" : "false");
+                        Serial.printf_P(PSTR("  URL FW: %s\n"), info.url_fw.c_str());
+                        Serial.printf_P(PSTR("  MD5 FW: %s\n"), info.fw_md5.c_str());
                         if(info.has_fs_update)
                         {
-                            Serial.printf("  URL FS: %s\n", info.url_fs.c_str());
-                            Serial.printf("  MD5 FS: %s\n", info.fs_md5.c_str());
+                            Serial.printf_P(PSTR("  URL FS: %s\n"), info.url_fs.c_str());
+                            Serial.printf_P(PSTR("  MD5 FS: %s\n"), info.fs_md5.c_str());
                         }
                     }
                 }
                 else
                 {
-                    Serial.println("[Update Handling] Fetching version infos failed");
+                    Serial.println(F("[Update Handling] Fetching version infos failed"));
                 }
             #endif
             updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;

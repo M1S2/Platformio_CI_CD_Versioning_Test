@@ -31,15 +31,15 @@ void setup()
     pinMode(LED_BUILTIN, OUTPUT);
 
     #ifdef DEBUG_OUTPUT
-        Serial.print("FW Version: ");
-        Serial.println(FW_VERSION);
+        Serial.print(F("FW Version: "));
+        Serial.println(F(FW_VERSION));
     #endif
 
     // Begin LittleFS
     if (!LittleFS.begin())
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("An Error has occurred while mounting LittleFS");
+            Serial.println(F("An Error has occurred while mounting LittleFS"));
         #endif
         return;
     }

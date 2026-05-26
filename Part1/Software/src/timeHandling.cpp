@@ -27,27 +27,27 @@ void timeHandling_printSerial(time_t time)
     #ifdef DEBUG_OUTPUT
         tm tm;                            // the structure tm holds time information in a more convenient way
         localtime_r(&time, &tm);          // update the structure tm with the current time
-        Serial.print("year:");
+        Serial.print(F("year:"));
         Serial.print(tm.tm_year + 1900);  // years since 1900
-        Serial.print("\tmonth:");
+        Serial.print(F("\tmonth:"));
         Serial.print(tm.tm_mon + 1);      // January = 0 (!)
-        Serial.print("\tday:");
+        Serial.print(F("\tday:"));
         Serial.print(tm.tm_mday);         // day of month
-        Serial.print("\thour:");
+        Serial.print(F("\thour:"));
         Serial.print(tm.tm_hour);         // hours since midnight  0-23
-        Serial.print("\tmin:");
+        Serial.print(F("\tmin:"));
         Serial.print(tm.tm_min);          // minutes after the hour  0-59
-        Serial.print("\tsec:");
+        Serial.print(F("\tsec:"));
         Serial.print(tm.tm_sec);          // seconds after the minute  0-61*
-        Serial.print("\twday");
+        Serial.print(F("\twday"));
         Serial.print(tm.tm_wday);         // days since Sunday 0-6
         if (tm.tm_isdst == 1)             // Daylight Saving Time flag
         {
-            Serial.print("\tDST");
+            Serial.print(F("\tDST"));
         }
         else
         {
-            Serial.print("\tstandard");
+            Serial.print(F("\tstandard"));
         }
         Serial.println();
     #endif
@@ -58,7 +58,7 @@ void timeHandling_printNowSerial()
     #ifdef DEBUG_OUTPUT
         if(!isTimeValid)
         {
-            Serial.println("Time wasn't synchronised yet.");
+            Serial.println(F("Time wasn't synchronised yet."));
         }
         else
         {
