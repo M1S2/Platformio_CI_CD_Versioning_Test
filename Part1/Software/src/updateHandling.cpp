@@ -40,12 +40,24 @@ Dev Manifest Format:
 */
 
 update_status_t updateStatus;
-
 update_info_t updateInfo_Part1;
 update_info_t updateInfo_Part2;
-update_info_t* updateInfos[] = { &updateInfo_Part1, &updateInfo_Part2 };
 
-const char* componentNames[] = { UPDATE_COMPONENT_NAME_PART1, UPDATE_COMPONENT_NAME_PART2 };
+static const update_component_definition_t updateComponentDefinitions[] =
+{
+    {
+        .component = UPDATE_COMPONENT_PART1,
+        .componentName = UPDATE_COMPONENT_NAME_PART1,
+        .updateInfo = &updateInfo_Part1,
+        .enqueueHandler = updateHandling_Part1_enqueueUpdateTasks
+    },
+    {
+        .component = UPDATE_COMPONENT_PART2,
+        .componentName = UPDATE_COMPONENT_NAME_PART2,
+        .updateInfo = &updateInfo_Part2,
+        .enqueueHandler = updateHandling_Part2_enqueueUpdateTasks
+    }
+};
 
 // Current versions arrays for each component
 const char* currentVersionsPart1[] = { FW_VERSION };
@@ -57,88 +69,27 @@ const size_t currentVersionsCounts[] = { sizeof(currentVersionsPart1) / sizeof(c
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
-UpdateQueue updateQueue;
+GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
 update_task_t currentUpdateTask;
 
 /**********************************************************************/
 
-bool UpdateQueue::push(const update_task_t &task)
+UpdateComponents updateHandling_findComponentByName(String componentName)
 {
-    if (count >= UPDATE_QUEUE_SIZE)
+    if(componentName == UPDATE_COMPONENT_NAME_PART1)
     {
-        return false;
+        return UPDATE_COMPONENT_PART1;
     }
-
-    queue[tail] = task;
-    tail = (tail + 1) % UPDATE_QUEUE_SIZE;
-    count++;
-    return true;
-}
-
-bool UpdateQueue::pop(update_task_t &task)
-{
-    if (count == 0)
+    else if(componentName == UPDATE_COMPONENT_NAME_PART2)
     {
-        return false;
+        return UPDATE_COMPONENT_PART2;
     }
-
-    task = queue[head];
-    head = (head + 1) % UPDATE_QUEUE_SIZE;
-    count--;
-    return true;
-}
-
-bool UpdateQueue::isEmpty() const
-{
-    return count == 0;
-}
-
-size_t UpdateQueue::size() const
-{
-    return count;
-}
-
-void UpdateQueue::clear()
-{
-    head = 0;
-    tail = 0;
-    count = 0;
+    return UPDATE_COMPONENT_NONE;
 }
 
 /**********************************************************************/
 
-bool updateHandling_findComponentByName(String componentName, update_info_t* foundUpdateInfo = nullptr, int* foundIndex = nullptr)
-{
-    #ifdef DEBUG_OUTPUT
-        Serial.printf_P(PSTR("[Update Handling] Looking for component \"%s\"...\n"), componentName.c_str());
-    #endif
-
-    bool componentValid = false;
-    if(foundIndex != nullptr) { *foundIndex = -1; }
-    size_t count = sizeof(componentNames) / sizeof(componentNames[0]);
-    for (size_t i = 0; i < count; i++)
-    {
-        if (componentName == componentNames[i])
-        {
-            componentValid = true;
-            if(foundIndex != nullptr) { *foundIndex = i; }
-            if (foundUpdateInfo != nullptr)
-            {
-                *foundUpdateInfo = *updateInfos[i];
-            }
-
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling] Found component \"%s\" at index %d\n"), componentName.c_str(), i);
-            #endif
-            break;
-        }
-    }
-    return componentValid;
-}
-
-/**********************************************************************/
-
-bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentNames[], size_t count)
+bool updateHandling_fetchVersions()
 {
     if(isTimeValid == false)
     {
@@ -148,7 +99,7 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
         return false;
     }
 
-    if (count == 0 || infos == nullptr || componentNames == nullptr)
+    if (std::size(updateComponentDefinitions) == 0)
     {
         return false;
     }
@@ -195,10 +146,11 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
     }
 
     bool anyValid = false;
-    for (size_t i = 0; i < count; ++i)
+    for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
     {
-        update_info_t &info = *infos[i];
-        const String componentName = String(componentNames[i]);
+        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
+        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
+        const String componentName = updateComponentDefinitions[i].componentName;
         info.componentName = componentName;
         info.valid = false;
         info.version = "";
@@ -238,51 +190,19 @@ bool updateHandling_fetchVersions(update_info_t *infos[], const char* componentN
 
 /**********************************************************************/
 
-bool updateHandling_performUpdate(String component = "", int componentInstanceIndex = -1)
-{
-    updateStatus.updateStep = UPDATE_STEP_NONE;
-
-    int foundIndex = -1;
-    if(!updateHandling_findComponentByName(component, nullptr, &foundIndex))
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling] No update info found for component \"%s\"\n"), component.c_str());
-        #endif
-        return false;
-    }
-    update_info_t& updateInfo = *updateInfos[foundIndex];
-
-    if(component == UPDATE_COMPONENT_NAME_PART1)
-    {
-        return updateHandling_performUpdatePart1(updateInfo, component, componentInstanceIndex);
-    }
-    else if(component == UPDATE_COMPONENT_NAME_PART2)
-    {
-        return updateHandling_performUpdatePart2(updateInfo, component, componentInstanceIndex);
-    }
-    else
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling] Update for component \"%s\" not supported\n"), component.c_str());
-        #endif
-        return false;
-    }
-}
-
-/**********************************************************************/
-
 void updateHandling_clearVersionInfos()
 {
-    size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
-    for (size_t i = 0; i < count; ++i)
-    {   
-        updateInfos[i]->valid = false;
-        updateInfos[i]->version = "";
-        updateInfos[i]->url_fw = "";
-        updateInfos[i]->url_fs = "";
-        updateInfos[i]->fw_md5 = "";
-        updateInfos[i]->fs_md5 = "";
-        updateInfos[i]->has_fs_update = false;
+    for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
+    {
+        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
+        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
+        info.valid = false;
+        info.version = "";
+        info.url_fw = "";
+        info.url_fs = "";
+        info.fw_md5 = "";
+        info.fs_md5 = "";
+        info.has_fs_update = false;
     }
 }
 
@@ -346,15 +266,13 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
     {
-        if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
+        if(updateHandling_startFetchingNewestVersionInfos())
         {
-            request->send(400, "text/plain", "Already fetching version infos or performing an update.");
-            return;
+            request->send(200, "text/plain", "Check for updates initiated.");
         }
         else
         {
-            updateHandling_startFetchingNewestVersionInfos();
-            request->send(200, "text/plain", "Check for updates initiated.");
+            request->send(400, "text/plain", "Already fetching version infos or performing an update.");
         }
     });
 
@@ -373,22 +291,22 @@ void updateHandling_initWebserverEndpoints()
                 return;
             }
 
-            String component = jsonObj["component"].as<String>();
+            String componentStr = jsonObj["component"].as<String>();
             int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
 
             StaticJsonDocument<128> doc;
             int resultCode = 200;
-            bool componentValid = updateHandling_findComponentByName(component);
-            if (componentValid)
+            UpdateComponents component = updateHandling_findComponentByName(componentStr);
+            if (component != UPDATE_COMPONENT_NONE)
             {
-                updateHandling_startUpdate(component, componentInstanceIndex);
+                updateHandling_enqueueUpdateTasks(component, componentInstanceIndex);
                 doc["status"] = "ok";
-                doc["message"] = "Update for " + component + " started";
+                doc["message"] = "Update for " + componentStr + " started";
             }
             else
             {
                 doc["status"] = "error";
-                doc["message"] = "Invalid component \"" + component + "\"";
+                doc["message"] = "Invalid component \"" + componentStr + "\"";
                 resultCode = 400;
             }
 
@@ -414,23 +332,24 @@ void updateHandling_initWebserverEndpoints()
 
     server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        // Using a pointer for the doc to keep stack usage minimal
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
 
-        size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
-        for (size_t i = 0; i < count; ++i)
+        for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
         {
+            if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
+            update_info_t &info = *updateComponentDefinitions[i].updateInfo;
             JsonObject component = componentsArray.createNestedObject();
-            component["name"] = componentNames[i];
-            component["available"] = updateInfos[i]->valid;
-            component["has_fs_update"] = updateInfos[i]->has_fs_update;
-            component["version"] = updateInfos[i]->version;
-            component["url_fw"] = updateInfos[i]->url_fw;
-            component["fw_md5"] = updateInfos[i]->fw_md5;
-            component["url_fs"] = updateInfos[i]->url_fs;
-            component["fs_md5"] = updateInfos[i]->fs_md5;
-            
+            component["id"] = UPDATE_COMPONENT_PART1 + i; // Assuming enum values are sequential and start from 0
+            component["name"] = updateComponentDefinitions[i].componentName;
+            component["available"] = info.valid;
+            component["has_fs_update"] = info.has_fs_update;
+            component["version"] = info.version;
+            component["url_fw"] = info.url_fw;
+            component["fw_md5"] = info.fw_md5;
+            component["url_fs"] = info.url_fs;
+            component["fs_md5"] = info.fs_md5;
+
             JsonArray versionsArray = component.createNestedArray("currentVersions");
             for (size_t j = 0; j < currentVersionsCounts[i]; ++j)
             {
@@ -445,25 +364,81 @@ void updateHandling_initWebserverEndpoints()
 
     /*--------------------------------------------------------------------*/
 
-    updateHandling_initWebserverEndpoints_Part2();
+    server.on("/update/remaining_tasks", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        StaticJsonDocument<JSON_ARRAY_SIZE(UPDATE_QUEUE_SIZE) + UPDATE_QUEUE_SIZE * JSON_OBJECT_SIZE(3)> doc;
+
+        JsonArray array = doc.to<JsonArray>();
+
+        size_t qSize = updateTaskQueue.size();
+        for (size_t i = 0; i < qSize; i++)
+        {
+            update_task_t task;
+            if (updateTaskQueue.getAt(i, task))
+            {
+                JsonObject obj = array.createNestedObject();
+                obj["component"] = task.component;
+                obj["instance"] = task.componentInstanceIndex;
+                obj["step"] = task.step;
+            }
+        }
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    /*--------------------------------------------------------------------*/
+
+    updateHandling_Part2_initWebserverEndpoints();
 }
 
 /**********************************************************************/
 
-void updateHandling_startFetchingNewestVersionInfos()
+bool updateHandling_startFetchingNewestVersionInfos()
 {
+    if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
+    {
+        return false;
+    }
     updateHandling_clearVersionInfos();
-    updateStatus.currentComponent = "";
+    updateStatus.currentComponent = UPDATE_COMPONENT_NONE;
     // Set state to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     updateStatus.state = UPDATE_STATE_CHECKING;
+    return true;
 }
 
-void updateHandling_startUpdate(String component, int componentInstanceIndex)
+/**********************************************************************/
+
+bool updateHandling_enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler)
 {
-    update_task_t newTask;
-    newTask.component = component;
-    newTask.componentInstanceIndex = componentInstanceIndex;
-    updateQueue.push(newTask);
+    update_task_t task;
+    task.component = component;
+    task.componentInstanceIndex = instanceIndex;
+    task.step = step;
+    task.handler = handler;
+    return updateTaskQueue.push(task);
+}
+
+void updateHandling_enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
+{
+    bool found = false;
+    for(size_t i = 0; i < std::size(updateComponentDefinitions); i++)
+    {
+        if(updateComponentDefinitions[i].component == component)
+        {
+            update_component_definition_t definition = updateComponentDefinitions[i];
+            definition.enqueueHandler(componentInstanceIndex);
+            found = true;
+            break;
+        }
+    }
+    if(!found)
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.printf_P(PSTR("[Update Handling] Cannot enqueue update tasks: Component \"%s\" not supported\n"), component);
+        #endif
+        return;
+    }
 }
 
 /**********************************************************************/
@@ -474,25 +449,25 @@ void updateHandling_loop()
     {
         case UPDATE_STATE_IDLE:
         {
-            if(!updateQueue.isEmpty())
+            if(!updateTaskQueue.isEmpty())
             {
-                updateQueue.pop(currentUpdateTask);
+                // Change to UPDATING state to perform the next update task in the queue in the next loop() iteration
                 updateStatus.state = UPDATE_STATE_UPDATING;
             }
             break;
         }
         case UPDATE_STATE_CHECKING:
         {
-            size_t count = sizeof(updateInfos) / sizeof(updateInfos[0]);
-            bool result = updateHandling_fetchVersions(updateInfos, componentNames, count);
+            bool result = updateHandling_fetchVersions();
 
             #ifdef DEBUG_OUTPUT
                 if(result)
                 {
                     Serial.println(F("[Update Handling] Fetching version infos successful:"));
-                    for(size_t i = 0; i < count; ++i)
+                    for(size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
                     {
-                        update_info_t &info = *updateInfos[i];
+                        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
+                        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
                         Serial.printf_P(PSTR("Component: %s\n"), info.componentName.c_str());
                         Serial.printf_P(PSTR("  Valid: %s\n"), info.valid ? "true" : "false");
                         Serial.printf_P(PSTR("  Version: %s\n"), info.version.c_str());
@@ -516,19 +491,47 @@ void updateHandling_loop()
         }
         case UPDATE_STATE_UPDATING:
         {
-            // Get the parameters for the update from the currentUpdateTask struct, which should have been set by the HTTP request handler for /update/start before switching the state to UPDATE_STATE_UPDATING
-            updateStatus.currentComponent = currentUpdateTask.component;
-            updateStatus.currentComponentInstanceIndex = currentUpdateTask.componentInstanceIndex;
+            if(!updateTaskQueue.isEmpty())
+            {
+                updateTaskQueue.pop(currentUpdateTask);
 
-            bool result = updateHandling_performUpdate(updateStatus.currentComponent, updateStatus.currentComponentInstanceIndex);
-            updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
+                updateStatus.currentComponent = currentUpdateTask.component;
+                updateStatus.currentComponentInstanceIndex = currentUpdateTask.componentInstanceIndex;
+                updateStatus.updateStep = currentUpdateTask.step;
+                if(currentUpdateTask.handler == nullptr)
+                {
+                    #ifdef DEBUG_OUTPUT
+                        Serial.println(F("[Update Handling] No handler assigned"));
+                    #endif
+                    updateStatus.state = UPDATE_STATE_ERROR;
+                }
+                else
+                {
+                    #ifdef DEBUG_OUTPUT
+                        Serial.printf_P(PSTR("[Update Handling] Performing update task: Component = %d, Instance Index = %d, Step = %d\n"), currentUpdateTask.component, currentUpdateTask.componentInstanceIndex, currentUpdateTask.step);
+                    #endif
+                    bool result = currentUpdateTask.handler(currentUpdateTask);
+                    if(!result)
+                    {
+                        updateStatus.state = UPDATE_STATE_ERROR;
+                    }
+                }
+            }
+            else
+            {
+                // No task in the queue, go back to IDLE state
+                updateStatus.updateStep = UPDATE_STEP_FINISHED;
+                updateStatus.state = UPDATE_STATE_IDLE;
+            }
             break;
         }
         case UPDATE_STATE_ERROR:
         {
-            updateQueue.clear();
-            updateStatus.currentComponent = "";
+            updateTaskQueue.clear();
+            updateStatus.currentComponent = UPDATE_COMPONENT_NONE;
             updateStatus.currentComponentInstanceIndex = -1;
+            updateStatus.updateStep = UPDATE_STEP_NONE;
+            updateStatus.updateProgress = 0.0f;
             break;
         }
         default: break;

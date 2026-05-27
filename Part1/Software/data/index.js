@@ -1,10 +1,17 @@
-const UpdateChannel =
+const UpdateChannels =
 {
 	STABLE: 0,
 	DEV: 1
 };
 
-const UpdateState =
+const UpdateComponents =
+{
+    UPDATE_COMPONENT_NONE: 0,
+    UPDATE_COMPONENT_PART1: 1,
+    UPDATE_COMPONENT_PART2: 2
+};
+
+const UpdateStates =
 {
 	IDLE: 0,
 	CHECKING: 1,
@@ -13,7 +20,7 @@ const UpdateState =
 	ERROR: 4
 };
 
-const UpdateStep =
+const UpdateSteps =
 {
     NONE: 0,
     PREPARE: 1,
@@ -23,7 +30,8 @@ const UpdateStep =
     FINISHED: 5
 };
 
-let lastUpdateState = UpdateState.IDLE;
+let lastUpdateState = UpdateStates.IDLE;
+let lastUpdateStep = UpdateSteps.NONE;
 let currentlyFetchingUpdateInfo = false;
 
 /**********************************************************************/
@@ -53,14 +61,28 @@ async function pollUpdateStatus(cyclic = true)
 			// - If an update has finished (and thus a new version is now available)
 			// - If a restart has finished
 			if (currentlyFetchingUpdateInfo ||
-				(lastUpdateState === UpdateState.CHECKING && updateStatus.state === UpdateState.IDLE) ||
-			   	(lastUpdateState === UpdateState.UPDATING && updateStatus.state === UpdateState.IDLE) ||
-			    (lastUpdateState === UpdateState.RESTARTING && updateStatus.state === UpdateState.IDLE))
+				(lastUpdateState === UpdateStates.CHECKING && updateStatus.state === UpdateStates.IDLE) ||
+			   	(lastUpdateState === UpdateStates.UPDATING && updateStatus.state === UpdateStates.IDLE) ||
+			    (lastUpdateState === UpdateStates.RESTARTING && updateStatus.state === UpdateStates.IDLE))
 			{
 				currentlyFetchingUpdateInfo = false;
 				await pollUpdateInfo();
 			}
+			if(updateStatus.updateStep !== lastUpdateStep)
+			{
+				const remainingTasksRes = await fetch('/update/remaining_tasks');
+				if (remainingTasksRes.ok)
+				{
+					const remainingTasks = await remainingTasksRes.json();
+					console.log('Remaining update tasks:', remainingTasks);
+				}
+				else
+				{
+					console.error('Failed to fetch remaining tasks:', remainingTasksRes.status);
+				}
+			}
 			lastUpdateState = updateStatus.state;
+			lastUpdateStep = updateStatus.updateStep;
 		}
 	}
 	catch (e) { console.error('Status polling error:', e); }
@@ -133,23 +155,23 @@ function displayUpdateInfos(updateInfo)
 
 				if (currentVersionElement)
 				{
-					currentVersionElement.id = `update-component-instance-current-version_${component.name}_${versionIndex}`;
+					currentVersionElement.id = `update-component-instance-current-version_${component.id}_${versionIndex}`;
 					currentVersionElement.textContent = currentVersion;
 				}
 
 				if (availableVersionElement)
 				{
-					availableVersionElement.id = `update-component-instance-available-version_${component.name}_${versionIndex}`;
+					availableVersionElement.id = `update-component-instance-available-version_${component.id}_${versionIndex}`;
 					availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
 				}
 
 				if (buttonStartUpdate)
 				{
-					buttonStartUpdate.id = `btn-update-start_${component.name}_${versionIndex}`;
+					buttonStartUpdate.id = `btn-update-start_${component.id}_${versionIndex}`;
 					buttonStartUpdate.onclick = () => startUpdate(component.name, versionIndex);
 				}
 
-				if (loaderBtnStartUpdate) loaderBtnStartUpdate.id = `loader-btn-update-start_${component.name}_${versionIndex}`;
+				if (loaderBtnStartUpdate) loaderBtnStartUpdate.id = `loader-btn-update-start_${component.id}_${versionIndex}`;
 
 				cardsContainer.appendChild(cardClone);
 			});
@@ -172,15 +194,31 @@ function displayUpdateStatus(updateStatus)
 	if (updateChannel)
 	{
 		let channelText = 'Unknown';
-		if(updateStatus.channel === UpdateChannel.STABLE)
+		if(updateStatus.channel === UpdateChannels.STABLE)
 		{
 			channelText = 'Stable';
 		}
-		else if(updateStatus.channel === UpdateChannel.DEV)
+		else if(updateStatus.channel === UpdateChannels.DEV)
 		{
 			channelText = 'Dev';
 		}
 		updateChannel.innerText = channelText;
+	}
+
+	let componentText = '?';
+	switch (updateStatus.currentComponent)
+	{
+		case UpdateComponents.UPDATE_COMPONENT_NONE:
+			componentText = 'None';
+			break;
+		case UpdateComponents.UPDATE_COMPONENT_PART1:
+			componentText = 'Part 1';
+			break;
+		case UpdateComponents.UPDATE_COMPONENT_PART2:
+			componentText = 'Part 2';
+			break;
+		default:
+			break;
 	}
 
 	let statusText = 'Unknown';
@@ -188,34 +226,34 @@ function displayUpdateStatus(updateStatus)
 	let isUpdating = false;
 	switch (updateStatus.state)
 	{
-		case UpdateState.IDLE:
+		case UpdateStates.IDLE:
 			statusText = 'Ready';
 			break;
-		case UpdateState.CHECKING:
+		case UpdateStates.CHECKING:
 			statusText = 'Checking for new versions';
 			isChecking = true;
 			break;
-		case UpdateState.UPDATING:
+		case UpdateStates.UPDATING:
 			switch(updateStatus.updateStep)
 			{
-				case UpdateStep.NONE:
+				case UpdateSteps.NONE:
 					statusText = 'Updating';
 					break;
-				case UpdateStep.PREPARE:
-					statusText = `Preparing update of ${updateStatus.currentComponent}`;
+				case UpdateSteps.PREPARE:
+					statusText = `Preparing update of ${componentText}`;
 					break;
-				case UpdateStep.WAIT:
-					statusText = `Waiting for ${updateStatus.currentComponent}`;
+				case UpdateSteps.WAIT:
+					statusText = `Waiting for ${componentText}`;
 					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
 					break;
-				case UpdateStep.FW:
-					statusText = `Updating firmware of ${updateStatus.currentComponent}`;
+				case UpdateSteps.FW:
+					statusText = `Updating firmware of ${componentText}`;
 					break;
-				case UpdateStep.FS:
-					statusText = `Updating filesystem of ${updateStatus.currentComponent}`;
+				case UpdateSteps.FS:
+					statusText = `Updating filesystem of ${componentText}`;
 					break;
-				case UpdateStep.FINISHED:
-					statusText = `Update of ${updateStatus.currentComponent} finished`;
+				case UpdateSteps.FINISHED:
+					statusText = `Update of ${componentText} finished`;
 					break;
 				default:
 					statusText = 'Updating';
@@ -223,11 +261,11 @@ function displayUpdateStatus(updateStatus)
 			}
 			isUpdating = true;
 			break;
-		case UpdateState.RESTARTING:
+		case UpdateStates.RESTARTING:
 			statusText = 'Restarting device';
 			isUpdating = true;
 			break;
-		case UpdateState.ERROR:
+		case UpdateStates.ERROR:
 			statusText = 'Error';
 			break;
 		default:
@@ -253,7 +291,7 @@ function displayUpdateStatus(updateStatus)
 		loader.style.display = isCurrentActiveLoader ? 'inline-block' : 'none';
 	});
 
-	if (progressBar && typeof updateStatus.updateProgress === 'number' && updateStatus.updateStep !== UpdateStep.WAIT)
+	if (progressBar && typeof updateStatus.updateProgress === 'number' && updateStatus.updateStep !== UpdateSteps.WAIT)
 	{
 		progressBar.value = updateStatus.updateProgress;
 	}

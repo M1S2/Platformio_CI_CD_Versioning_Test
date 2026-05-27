@@ -2,8 +2,7 @@
 #define UPDATE_HANDLING_PART1_H
 
 #include <Arduino.h>
-#include "updateHandling.h"
 
-bool updateHandling_performUpdatePart1(update_info_t& updateInfo, String component, int componentInstanceIndex);
+bool updateHandling_Part1_enqueueUpdateTasks(int componentInstanceIndex);
 
 #endif

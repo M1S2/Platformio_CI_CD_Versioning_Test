@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <MD5Builder.h>
+#include "updateHandling.h"
 #include "updateHandling_Part2.h"
 #include "timeHandling.h"
 #include "wifiHandling.h"
@@ -13,7 +14,8 @@
 
 #define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
 
-update_info_t* currentUpdateInfoPart2;
+bool connectionEstablished = false;
+bool fwUpdateFinished = false;
 
 /**********************************************************************/
 
@@ -37,13 +39,7 @@ String calculateFileMD5(const String &filePath)
     return md5.toString();
 }
 
-#if false
-void updateHandling_part2ReportProgress(float stepProgress)
-{
-    updateStatus.updateProgress = stepProgress;
-    updateHandling_sendProgressEvent(updateStatus.updateProgress);
-}
-#endif
+/**********************************************************************/
 
 bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
 {
@@ -194,7 +190,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
 
 /**********************************************************************/
 
-void updateHandling_initWebserverEndpoints_Part2()
+void updateHandling_Part2_initWebserverEndpoints()
 {
     server.on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
     {
@@ -203,6 +199,7 @@ void updateHandling_initWebserverEndpoints_Part2()
             request->send(404, "text/plain", "Action hub not open");
             return;
         }
+        connectionEstablished = true;
         if(!LittleFS.exists(LITTLEFS_PART2_FW_PATH))
         {
             request->send(404, "text/plain", "File not found");
@@ -216,12 +213,13 @@ void updateHandling_initWebserverEndpoints_Part2()
 
     server.on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        if(currentUpdateInfoPart2 == nullptr || !currentUpdateInfoPart2->valid)
+        connectionEstablished = true;
+        if(!updateInfo_Part2.valid)
         {
             request->send(404, "text/plain", "No valid update info available");
             return;
         }
-        request->send(200, "text/plain", currentUpdateInfoPart2->fw_md5);
+        request->send(200, "text/plain", updateInfo_Part2.fw_md5);
     });
     
     /*--------------------------------------------------------------------*/
@@ -234,6 +232,7 @@ void updateHandling_initWebserverEndpoints_Part2()
         }
         if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
         {
+            fwUpdateFinished = true;
             updateStatus.updateStep = UPDATE_STEP_FINISHED;
         }
         request->send(200, "text/plain", "OK");
@@ -242,16 +241,15 @@ void updateHandling_initWebserverEndpoints_Part2()
 
 /**********************************************************************/
 
-bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String component = "", int componentInstanceIndex = -1)
+bool updateHandling_Part2_performUpdateTask_PREPARE(update_task_t& updateTask)
 {
-    if (!updateInfo.valid)
+    if (!updateInfo_Part2.valid)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part2] No valid update info available"));
         #endif
         return false;
     }
-
     if(isTimeValid == false)
     {
         #ifdef DEBUG_OUTPUT
@@ -259,37 +257,39 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
         #endif
         return false;
     }
+    return updateHandling_downloadFileToLittleFS(updateInfo_Part2.url_fw, LITTLEFS_PART2_FW_PATH, updateInfo_Part2.fw_md5);
+}
 
-    currentUpdateInfoPart2 = &updateInfo;
+/**********************************************************************/
 
-    updateStatus.updateStep = UPDATE_STEP_PREPARE;
-    if(!updateHandling_downloadFileToLittleFS(updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, updateInfo.fw_md5)) { return false; }
-
-    #ifdef DEBUG_OUTPUT
-        if(updateInfo.has_fs_update)
-        {
-            Serial.println(F("[Update Handling Part2] Filesystem update not supported yet for part 2"));
-        }
-    #endif
-
+bool updateHandling_Part2_performUpdateTask_WAIT(update_task_t& updateTask)
+{
+    connectionEstablished = false;
+    fwUpdateFinished = false;
     if(!part2ActionHub_startAP(PART2ACTIONHUB_ACTION_UPDATE)) { return false; }
 
-    updateStatus.updateStep = UPDATE_STEP_WAIT;
-    UpdateStep lastStep = updateStatus.updateStep;
-    while(updateStatus.updateStep != UPDATE_STEP_FINISHED)
+    while(!connectionEstablished)
     {
-        if(updateStatus.updateStep != lastStep)
-        {
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling Part2] Update step changed to %d\n"), updateStatus.updateStep);
-            #endif
-            lastStep = updateStatus.updateStep;
-        }
-
         if(part2ActionHub_handleAPTimeout())
         {
             // The action hub was closed by timeout.
-            updateStatus.updateStep = UPDATE_STEP_NONE;
+            break;
+        }
+        yield();
+    }
+    return connectionEstablished;
+}
+
+/**********************************************************************/
+
+bool updateHandling_Part2_performUpdateTask_FW(update_task_t& updateTask)
+{
+    while(!fwUpdateFinished)
+    {
+        if(part2ActionHub_handleAPTimeout())
+        {
+            // The action hub was closed by timeout.
+            break;
         }
         yield();
     }
@@ -300,10 +300,24 @@ bool updateHandling_performUpdatePart2(update_info_t& updateInfo, String compone
     {
         LittleFS.remove(LITTLEFS_PART2_FW_PATH);
     }
+    return fwUpdateFinished;
+}
 
-    if(updateStatus.updateStep == UPDATE_STEP_FINISHED)
+/**********************************************************************/
+
+bool updateHandling_Part2_enqueueUpdateTasks(int componentInstanceIndex = -1)
+{
+    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, updateHandling_Part2_performUpdateTask_PREPARE))
     {
-        return true;
+        return false;
     }
-    return false;
+    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, updateHandling_Part2_performUpdateTask_WAIT))
+    {
+        return false;
+    }
+    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part2_performUpdateTask_FW))
+    {
+        return false;
+    }
+    return true;
 }
