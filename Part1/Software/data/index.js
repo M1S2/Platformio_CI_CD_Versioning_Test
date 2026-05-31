@@ -27,12 +27,41 @@ const UpdateSteps =
     WAIT: 2,
     FW: 3,
     FS: 4,
-    FINISHED: 5
+	RESTART: 5,
+    FINISHED: 6
 };
 
 let lastUpdateState = UpdateStates.IDLE;
 let lastUpdateStep = UpdateSteps.NONE;
 let currentlyFetchingUpdateInfo = false;
+
+/**********************************************************************/
+
+function updateComponentToString(component)
+{
+    switch (component)
+	{
+        case UpdateComponents.UPDATE_COMPONENT_NONE:  return '-';
+        case UpdateComponents.UPDATE_COMPONENT_PART1: return 'Part 1';
+        case UpdateComponents.UPDATE_COMPONENT_PART2: return 'Part 2';
+        default: return '?';
+    }
+}
+
+function updateStepToString(step)
+{
+    switch (step)
+	{
+        case UpdateSteps.NONE:     return '-';
+        case UpdateSteps.PREPARE:  return 'Preparing Update';
+        case UpdateSteps.WAIT:     return 'Waiting';
+        case UpdateSteps.FW:       return 'Firmware Update';
+        case UpdateSteps.FS:       return 'Filesystem Update';
+        case UpdateSteps.FINISHED: return 'Finished Update';
+		case UpdateSteps.RESTART:  return 'Restarting';
+        default: return '?';
+    }
+}
 
 /**********************************************************************/
 
@@ -74,7 +103,7 @@ async function pollUpdateStatus(cyclic = true)
 				if (remainingTasksRes.ok)
 				{
 					const remainingTasks = await remainingTasksRes.json();
-					console.log('Remaining update tasks:', remainingTasks);
+					displayUpdateTaskList(remainingTasks);
 				}
 				else
 				{
@@ -142,7 +171,7 @@ function displayUpdateInfos(updateInfo)
 			const columnTitle = columnClone.querySelector('.update-column-title');
 			const cardsContainer = columnClone.querySelector('.update-component-instance-card-container');
 
-			if (columnTitle) columnTitle.textContent = component.name;
+			if (columnTitle) columnTitle.textContent = updateComponentToString(component.id);
 
 			// Create a card for each current version
 			component.currentVersions.forEach((currentVersion, versionIndex) =>
@@ -184,76 +213,55 @@ function displayUpdateInfos(updateInfo)
 
 function displayUpdateStatus(updateStatus)
 {
-	const updateStatusElement = document.getElementById('update_status');
-	const updateChannel = document.getElementById('update_channel');
+	const updateStatusElement = document.querySelector('.update-status');
+	const updateChannelSelect = document.getElementById('update_channel_select');
 	const progressBar = document.getElementById('update_progress');
 
 	const btnCheckUpdate = document.getElementById('btn-check-update');
 	const loaderBtnCheckUpdate = document.getElementById('loader-btn-check-update');
 
-	if (updateChannel)
+	if (updateChannelSelect)
 	{
-		let channelText = 'Unknown';
-		if(updateStatus.channel === UpdateChannels.STABLE)
-		{
-			channelText = 'Stable';
-		}
-		else if(updateStatus.channel === UpdateChannels.DEV)
-		{
-			channelText = 'Dev';
-		}
-		updateChannel.innerText = channelText;
+		updateChannelSelect.value = (updateStatus.channel === UpdateChannels.DEV) ? 'dev' : 'stable';
 	}
 
-	let componentText = '?';
-	switch (updateStatus.currentComponent)
-	{
-		case UpdateComponents.UPDATE_COMPONENT_NONE:
-			componentText = 'None';
-			break;
-		case UpdateComponents.UPDATE_COMPONENT_PART1:
-			componentText = 'Part 1';
-			break;
-		case UpdateComponents.UPDATE_COMPONENT_PART2:
-			componentText = 'Part 2';
-			break;
-		default:
-			break;
-	}
-
+	const componentText = updateComponentToString(updateStatus.currentComponent);
 	let statusText = 'Unknown';
+	let statusIcon = 'circle';
 	let isChecking = false;
 	let isUpdating = false;
 	switch (updateStatus.state)
 	{
 		case UpdateStates.IDLE:
 			statusText = 'Ready';
+			statusIcon = 'check_circle';
 			break;
 		case UpdateStates.CHECKING:
 			statusText = 'Checking for new versions';
+			statusIcon = 'search';
 			isChecking = true;
 			break;
 		case UpdateStates.UPDATING:
+			const updateStepText = updateStepToString(updateStatus.updateStep);
+			statusIcon = getUpdateStepIcon(updateStatus.updateStep);
 			switch(updateStatus.updateStep)
 			{
 				case UpdateSteps.NONE:
-					statusText = 'Updating';
-					break;
-				case UpdateSteps.PREPARE:
-					statusText = `Preparing update of ${componentText}`;
+					statusText = updateStepText;
 					break;
 				case UpdateSteps.WAIT:
-					statusText = `Waiting for ${componentText}`;
+					statusText = updateStepText + ` for ${componentText}`;
 					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
 					break;
+				case UpdateSteps.PREPARE:
 				case UpdateSteps.FW:
-					statusText = `Updating firmware of ${componentText}`;
-					break;
 				case UpdateSteps.FS:
-					statusText = `Updating filesystem of ${componentText}`;
-					break;
 				case UpdateSteps.FINISHED:
-					statusText = `Update of ${componentText} finished`;
+					statusText = updateStepText + ` of ${componentText}`;
+					break;
+				case UpdateSteps.RESTART:
+					statusText = updateStepText + ` of ${componentText}`;
+					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
 					break;
 				default:
 					statusText = 'Updating';
@@ -263,17 +271,35 @@ function displayUpdateStatus(updateStatus)
 			break;
 		case UpdateStates.RESTARTING:
 			statusText = 'Restarting device';
+			progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
+			statusIcon = 'restart_alt';
 			isUpdating = true;
 			break;
 		case UpdateStates.ERROR:
 			statusText = 'Error';
+			statusIcon = 'error';
 			break;
 		default:
 			break;
 	}
-	if(updateStatusElement) updateStatusElement.innerText = statusText;
+	if(updateStatusElement)
+	{
+		updateStatusElement.innerHTML = '';	// Clear existing content
+
+		const icon = document.createElement("span");
+		icon.className = "material-symbols-outlined";
+		icon.textContent = statusIcon;
+		
+		const text = document.createElement("span");
+		text.textContent = statusText;
+
+		updateStatusElement.appendChild(icon);
+		updateStatusElement.appendChild(text);
+	}
 	if(btnCheckUpdate) btnCheckUpdate.disabled = isChecking || isUpdating;
 	if(loaderBtnCheckUpdate) loaderBtnCheckUpdate.style.display = isChecking ? 'inline-block' : 'none';
+
+	updateChannelSelect.disabled = isChecking || isUpdating;
 
 	// Handle dynamic component update buttons and loaders by ID prefix
 	const componentUpdateButtons = document.querySelectorAll('[id^="btn-update-start_"]');
@@ -295,6 +321,79 @@ function displayUpdateStatus(updateStatus)
 	{
 		progressBar.value = updateStatus.updateProgress;
 	}
+}
+
+/**********************************************************************/
+
+function getUpdateStepIcon(step)
+{
+    switch(step)
+    {
+        case UpdateSteps.PREPARE: return "build";
+        case UpdateSteps.WAIT: return "schedule";
+        case UpdateSteps.FW: return "memory";
+        case UpdateSteps.FS: return "folder";
+        case UpdateSteps.RESTART: return "restart_alt";
+		case UpdateSteps.FINISHED: return "check_circle";
+        default: return "circle";
+    }
+}
+
+function displayUpdateTaskList(updateTaskList)
+{
+	const container = document.getElementById("update_task_list");
+    container.innerHTML = "";
+    if(updateTaskList.length === 0)
+    {
+        container.innerHTML = '<div class="update-task-empty">keine ausstehenden Tasks</div>';
+        return;
+    }
+
+    const groupedTasks = {};
+    updateTaskList.forEach(task =>
+    {
+        const key = `${task.component}_${task.instance}`;
+        if(!groupedTasks[key])
+        {
+            groupedTasks[key] =
+            {
+                component: task.component,
+                instance: task.instance,
+                steps: []
+            };
+        }
+        groupedTasks[key].steps.push(task.step);
+    });
+
+    Object.values(groupedTasks).forEach(group =>
+    {
+        const groupDiv = document.createElement("div");
+        groupDiv.className = "update-task-group";
+
+        const header = document.createElement("div");
+        header.className = "update-task-group-header";
+		header.textContent = group.instance >= 0 ? `${updateComponentToString(group.component)} #${group.instance}` : updateComponentToString(group.component);
+		groupDiv.appendChild(header);
+
+        group.steps.forEach(step =>
+        {
+            const row = document.createElement("div");
+            row.className = "update-task-step";
+            
+			const icon = document.createElement("span");
+            icon.className = "material-symbols-outlined";
+            icon.textContent = getUpdateStepIcon(step);
+            
+			const text = document.createElement("span");
+            text.textContent = updateStepToString(step);
+
+            row.appendChild(icon);
+            row.appendChild(text);
+            groupDiv.appendChild(row);
+        });
+
+        container.appendChild(groupDiv);
+    });
 }
 
 /**********************************************************************/

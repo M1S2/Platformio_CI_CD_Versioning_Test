@@ -20,20 +20,34 @@
 			<!-- Common Status/Control Card -->
 			<div class="card update-common-card">
 				<h2>Update Übersicht</h2>
+				<div class="update-card-content">
+					<div class="update-info-column">
+						<div class="loader-button-wrapper">
+								<span class="loader" id="loader-btn-check-update" style="display: none;"></span>
+								<button class="icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+						</div>
 
-				<div>
-					<p>Update-Kanal: <span id="update_channel">-</span></p>
-					<p>Status: <span id="update_status">Idle</span></p>
-					<progress id="update_progress" max="100"></progress>
-				</div>
+						<div>
+							<div class="update-status">-</div>
+							<progress id="update_progress" max="100"></progress>
+						</div>
 
-				<div class="sensor-data-buttons">
-					<button onclick="setUpdateChannel('stable')">Set Channel Stable</button>
-					<button onclick="setUpdateChannel('dev')">Set Channel Dev</button>
+						<br>
 
-					<div class="loader-button-wrapper">
-						<span class="loader" id="loader-btn-check-update" style="display: none;"></span>
-						<button class="icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+						<div class="update-channel">
+							<label for="update_channel_select">Update-Kanal:</label>
+							<select id="update_channel_select" onchange="setUpdateChannel(this.value)">
+								<option value="stable">Stable (Produktion)</option>
+								<option value="dev">Dev (Entwicklung)</option>
+							</select>
+						</div>
+					</div>
+
+					<div class="update-task-queue-section">
+						<h3>Ausstehende Update Tasks</h3>
+						<div id="update_task_list">
+							<div class="update-task-empty"></div>
+						</div>
 					</div>
 				</div>
 			</div>
