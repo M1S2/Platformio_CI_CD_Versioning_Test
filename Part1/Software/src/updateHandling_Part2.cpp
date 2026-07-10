@@ -12,6 +12,8 @@
 
 /**********************************************************************/
 
+update_info_t updateInfo_Part2;
+
 #define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
 
 bool connectionEstablished = false;
@@ -320,4 +322,25 @@ bool updateHandling_Part2_enqueueUpdateTasks(int componentInstanceIndex = -1)
         return false;
     }
     return true;
+}
+
+/**********************************************************************/
+
+size_t updateHandling_Part2_getInstanceCount()
+{
+#warning At the moment there are two instances of Part2. Make this variable.
+    return 2;
+}
+
+/**********************************************************************/
+
+char* updateHandling_Part2_queryVersion(int componentInstanceIndex = -1)
+{
+    switch (componentInstanceIndex)
+    {
+        case 0: return "?";
+        case 1: return "?";
+        default: return "?";
+    }
+    return "?"; // Default case, should not be reached
 }

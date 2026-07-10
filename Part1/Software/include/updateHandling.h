@@ -33,7 +33,9 @@ enum UpdateSteps
     UPDATE_STEP_PREPARE,
     UPDATE_STEP_WAIT,
     UPDATE_STEP_FW,
+    UPDATE_STEP_BACKUP,
     UPDATE_STEP_FS,
+    UPDATE_STEP_RESTORE,
     UPDATE_STEP_RESTART,
     UPDATE_STEP_FINISHED
 };
@@ -47,7 +49,7 @@ typedef struct update_status
     UpdateStates state = UPDATE_STATE_IDLE;                         // Current state of the update handling
     UpdateComponents currentComponent = UPDATE_COMPONENT_NONE;      // Component currently being updated
     int currentComponentInstanceIndex = -1;                         // Index of the component instance currently being updated
-    UpdateSteps updateStep = UPDATE_STEP_FW;                        // Current step of the update process (firmware update or filesystem update)
+    UpdateSteps updateStep = UPDATE_STEP_NONE;                      // Current step of the update process (firmware update or filesystem update)
     float updateProgress = 0.0f;                                    // Progress of the current or last firmware and filesystem update (0.0 to 100.0)
 } update_status_t;
 
@@ -64,9 +66,6 @@ typedef struct update_info
 } update_info_t;
 
 extern update_status_t updateStatus;
-
-extern update_info_t updateInfo_Part1;
-extern update_info_t updateInfo_Part2;
 
 /**********************************************************************/
 
@@ -85,12 +84,16 @@ struct update_task
 };
 
 typedef bool (*update_enqueue_handler_t)(int componentInstanceIndex);
+typedef size_t (*update_get_instance_count_handler_t)();
+typedef char* (*update_query_version_handler_t)(int componentInstanceIndex);
 typedef struct
 {
     UpdateComponents component;
     String componentName;
     update_info_t* updateInfo;
     update_enqueue_handler_t enqueueHandler;
+    update_get_instance_count_handler_t getInstanceCountHandler;
+    update_query_version_handler_t queryVersionHandler;
 } update_component_definition_t;
 
 /**********************************************************************/

@@ -3,6 +3,7 @@
 #include <ESP8266httpUpdate.h>
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
+#include <LittleFS.h>
 #include "updateHandling.h"
 #include "wifiHandling.h"
 #include "timeHandling.h"
@@ -10,10 +11,6 @@
 #include "version.h"
 #include "updateHandling_Part1.h"
 #include "updateHandling_Part2.h"
-
-const char* stableBaseUrl = "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/";
-const char* devBaseUrl = "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/";
-const char* manifestFilename = "manifest.json";
 
 /*
 Stable Manifest Format:
@@ -40,8 +37,6 @@ Dev Manifest Format:
 */
 
 update_status_t updateStatus;
-update_info_t updateInfo_Part1;
-update_info_t updateInfo_Part2;
 
 static const update_component_definition_t updateComponentDefinitions[] =
 {
@@ -49,22 +44,19 @@ static const update_component_definition_t updateComponentDefinitions[] =
         .component = UPDATE_COMPONENT_PART1,
         .componentName = UPDATE_COMPONENT_NAME_PART1,
         .updateInfo = &updateInfo_Part1,
-        .enqueueHandler = updateHandling_Part1_enqueueUpdateTasks
+        .enqueueHandler = updateHandling_Part1_enqueueUpdateTasks,
+        .getInstanceCountHandler = updateHandling_Part1_getInstanceCount,
+        .queryVersionHandler = updateHandling_Part1_queryVersion
     },
     {
         .component = UPDATE_COMPONENT_PART2,
         .componentName = UPDATE_COMPONENT_NAME_PART2,
         .updateInfo = &updateInfo_Part2,
-        .enqueueHandler = updateHandling_Part2_enqueueUpdateTasks
+        .enqueueHandler = updateHandling_Part2_enqueueUpdateTasks,
+        .getInstanceCountHandler = updateHandling_Part2_getInstanceCount,
+        .queryVersionHandler = updateHandling_Part2_queryVersion
     }
 };
-
-// Current versions arrays for each component
-const char* currentVersionsPart1[] = { FW_VERSION };
-const char* currentVersionsPart2[] = { "?", "?" };
-const char** currentVersionsArray[] = { currentVersionsPart1, currentVersionsPart2 };
-const size_t currentVersionsCounts[] = { sizeof(currentVersionsPart1) / sizeof(currentVersionsPart1[0]), 
-                                        sizeof(currentVersionsPart2) / sizeof(currentVersionsPart2[0]) };
 
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
@@ -104,8 +96,8 @@ bool updateHandling_fetchVersions()
         return false;
     }
 
-    const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
-    String manifestUrl = String(baseUrl) + manifestFilename;
+    const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? UPDATE_STABLEBASEURL : UPDATE_DEVBASEURL;
+    String manifestUrl = String(baseUrl) + UPDATE_MANIFESTFILENAME;
 
     #ifdef DEBUG_OUTPUT
         Serial.printf_P(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
@@ -113,7 +105,7 @@ bool updateHandling_fetchVersions()
 
     WiFiClientSecure clientSecure;
     clientSecure.setSession(&session);
-    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setTrustAnchors(&certList);    
     clientSecure.setBufferSizes(1024, 512);
 
     HTTPClient http;
@@ -335,13 +327,16 @@ void updateHandling_initWebserverEndpoints()
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
 
-        for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
+        for (size_t componentIndex = 0; componentIndex < std::size(updateComponentDefinitions); ++componentIndex)
         {
-            if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
-            update_info_t &info = *updateComponentDefinitions[i].updateInfo;
+            if(updateComponentDefinitions[componentIndex].updateInfo == nullptr) { continue; }
+            update_component_definition_t definition = updateComponentDefinitions[componentIndex];
+            update_info_t &info = *definition.updateInfo;
+            size_t instanceCount = definition.getInstanceCountHandler();
+
             JsonObject component = componentsArray.createNestedObject();
-            component["id"] = UPDATE_COMPONENT_PART1 + i; // Assuming enum values are sequential and start from 0
-            component["name"] = updateComponentDefinitions[i].componentName;
+            component["id"] = UPDATE_COMPONENT_PART1 + componentIndex; // Assuming enum values are sequential and start from 0
+            component["name"] = definition.componentName;
             component["available"] = info.valid;
             component["has_fs_update"] = info.has_fs_update;
             component["version"] = info.version;
@@ -349,11 +344,12 @@ void updateHandling_initWebserverEndpoints()
             component["fw_md5"] = info.fw_md5;
             component["url_fs"] = info.url_fs;
             component["fs_md5"] = info.fs_md5;
+            component["instance_count"] = instanceCount;
 
             JsonArray versionsArray = component.createNestedArray("currentVersions");
-            for (size_t j = 0; j < currentVersionsCounts[i]; ++j)
+            for (size_t instanceIndex = 0; instanceIndex < instanceCount; ++instanceIndex)
             {
-                versionsArray.add(currentVersionsArray[i][j]);
+                versionsArray.add(definition.queryVersionHandler(instanceIndex));
             }
         }
 
@@ -389,6 +385,7 @@ void updateHandling_initWebserverEndpoints()
 
     /*--------------------------------------------------------------------*/
 
+    updateHandling_Part1_initWebserverEndpoints();
     updateHandling_Part2_initWebserverEndpoints();
 }
 
