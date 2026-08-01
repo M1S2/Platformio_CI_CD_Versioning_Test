@@ -5,12 +5,7 @@
 #include <AsyncJson.h>
 #include <LittleFS.h>
 #include "updateHandling.h"
-#include "wifiHandling.h"
-#include "timeHandling.h"
-#include "certs.h"
-#include "version.h"
-#include "updateHandling_Part1.h"
-#include "updateHandling_Part2.h"
+#include "updateHandlingConfig.h"
 
 /*
 Stable Manifest Format:
@@ -38,43 +33,26 @@ Dev Manifest Format:
 
 update_status_t updateStatus;
 
-static const update_component_definition_t updateComponentDefinitions[] =
-{
-    {
-        .component = UPDATE_COMPONENT_PART1,
-        .componentName = UPDATE_COMPONENT_NAME_PART1,
-        .updateInfo = &updateInfo_Part1,
-        .enqueueHandler = updateHandling_Part1_enqueueUpdateTasks,
-        .getInstanceCountHandler = updateHandling_Part1_getInstanceCount,
-        .queryVersionHandler = updateHandling_Part1_queryVersion
-    },
-    {
-        .component = UPDATE_COMPONENT_PART2,
-        .componentName = UPDATE_COMPONENT_NAME_PART2,
-        .updateInfo = &updateInfo_Part2,
-        .enqueueHandler = updateHandling_Part2_enqueueUpdateTasks,
-        .getInstanceCountHandler = updateHandling_Part2_getInstanceCount,
-        .queryVersionHandler = updateHandling_Part2_queryVersion
-    }
-};
-
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
 GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
 update_task_t currentUpdateTask;
 
+Session* p_wifiSession;
+X509List* p_wifiCertList;
+
 /**********************************************************************/
 
 UpdateComponents updateHandling_findComponentByName(String componentName)
 {
-    if(componentName == UPDATE_COMPONENT_NAME_PART1)
+    for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
     {
-        return UPDATE_COMPONENT_PART1;
-    }
-    else if(componentName == UPDATE_COMPONENT_NAME_PART2)
-    {
-        return UPDATE_COMPONENT_PART2;
+        update_component_definition_t definition = updateComponentDefinitions[componentIndex];
+        if(definition.componentName == componentName)
+        {
+            return definition.component;
+        }
     }
     return UPDATE_COMPONENT_NONE;
 }
@@ -83,15 +61,7 @@ UpdateComponents updateHandling_findComponentByName(String componentName)
 
 bool updateHandling_fetchVersions()
 {
-    if(isTimeValid == false)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
-        #endif
-        return false;
-    }
-
-    if (std::size(updateComponentDefinitions) == 0)
+    if (updateComponentDefinitionCount == 0)
     {
         return false;
     }
@@ -104,8 +74,8 @@ bool updateHandling_fetchVersions()
     #endif
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(&session);
-    clientSecure.setTrustAnchors(&certList);    
+    clientSecure.setSession(p_wifiSession);
+    clientSecure.setTrustAnchors(p_wifiCertList);
     clientSecure.setBufferSizes(1024, 512);
 
     HTTPClient http;
@@ -138,7 +108,7 @@ bool updateHandling_fetchVersions()
     }
 
     bool anyValid = false;
-    for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
+    for (size_t i = 0; i < updateComponentDefinitionCount; ++i)
     {
         if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
         update_info_t &info = *updateComponentDefinitions[i].updateInfo;
@@ -184,7 +154,7 @@ bool updateHandling_fetchVersions()
 
 void updateHandling_clearVersionInfos()
 {
-    for (size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
+    for (size_t i = 0; i < updateComponentDefinitionCount; ++i)
     {
         if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
         update_info_t &info = *updateComponentDefinitions[i].updateInfo;
@@ -212,8 +182,13 @@ void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument
 
 /**********************************************************************/
 
-void updateHandling_initWebserverEndpoints()
+void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList)
 {
+    p_wifiSession = p_session;
+    p_wifiCertList = p_certList;
+
+    /*--------------------------------------------------------------------*/
+
     // Handler for /update/set_channel (POST with JSON-Body)
     static AsyncCallbackJsonWebHandler* setChannelHandler = nullptr;
     if (!setChannelHandler)
@@ -251,12 +226,12 @@ void updateHandling_initWebserverEndpoints()
             updateHandling_clearVersionInfos();
             request->send(200, "text/plain", "Channel set to " + channel);
         });
-        server.addHandler(setChannelHandler);
+        p_server->addHandler(setChannelHandler);
     }
 
     /*--------------------------------------------------------------------*/
 
-    server.on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         if(updateHandling_startFetchingNewestVersionInfos())
         {
@@ -306,12 +281,12 @@ void updateHandling_initWebserverEndpoints()
             serializeJson(doc, response);
             request->send(resultCode, "application/json", response);
         });
-        server.addHandler(startUpdateHandler);
+        p_server->addHandler(startUpdateHandler);
     }
 
     /*--------------------------------------------------------------------*/
 
-    server.on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<128> doc;
         updateHandling_prepareStatusDoc(updateStatus, doc);
@@ -322,12 +297,12 @@ void updateHandling_initWebserverEndpoints()
 
     /*--------------------------------------------------------------------*/
 
-    server.on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
 
-        for (size_t componentIndex = 0; componentIndex < std::size(updateComponentDefinitions); ++componentIndex)
+        for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
         {
             if(updateComponentDefinitions[componentIndex].updateInfo == nullptr) { continue; }
             update_component_definition_t definition = updateComponentDefinitions[componentIndex];
@@ -335,7 +310,7 @@ void updateHandling_initWebserverEndpoints()
             size_t instanceCount = definition.getInstanceCountHandler();
 
             JsonObject component = componentsArray.createNestedObject();
-            component["id"] = UPDATE_COMPONENT_PART1 + componentIndex; // Assuming enum values are sequential and start from 0
+            component["id"] = definition.component;
             component["name"] = definition.componentName;
             component["available"] = info.valid;
             component["has_fs_update"] = info.has_fs_update;
@@ -360,7 +335,7 @@ void updateHandling_initWebserverEndpoints()
 
     /*--------------------------------------------------------------------*/
 
-    server.on("/update/remaining_tasks", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/remaining_tasks", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<JSON_ARRAY_SIZE(UPDATE_QUEUE_SIZE) + UPDATE_QUEUE_SIZE * JSON_OBJECT_SIZE(3)> doc;
 
@@ -385,8 +360,14 @@ void updateHandling_initWebserverEndpoints()
 
     /*--------------------------------------------------------------------*/
 
-    updateHandling_Part1_initWebserverEndpoints();
-    updateHandling_Part2_initWebserverEndpoints();
+    for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
+    {
+        const update_component_definition_t &definition = updateComponentDefinitions[componentIndex];
+        if (definition.initWebserverEndpointsHandler)
+        {
+            definition.initWebserverEndpointsHandler(p_server);
+        }
+    }
 }
 
 /**********************************************************************/
@@ -419,7 +400,7 @@ bool updateHandling_enqueueSingleUpdateTask(UpdateComponents component, int inst
 void updateHandling_enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
 {
     bool found = false;
-    for(size_t i = 0; i < std::size(updateComponentDefinitions); i++)
+    for(size_t i = 0; i < updateComponentDefinitionCount; i++)
     {
         if(updateComponentDefinitions[i].component == component)
         {
@@ -461,7 +442,7 @@ void updateHandling_loop()
                 if(result)
                 {
                     Serial.println(F("[Update Handling] Fetching version infos successful:"));
-                    for(size_t i = 0; i < std::size(updateComponentDefinitions); ++i)
+                    for(size_t i = 0; i < updateComponentDefinitionCount; ++i)
                     {
                         if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
                         update_info_t &info = *updateComponentDefinitions[i].updateInfo;

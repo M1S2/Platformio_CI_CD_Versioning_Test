@@ -5,7 +5,7 @@
 
 extern update_info_t updateInfo_Part2;
 
-void updateHandling_Part2_initWebserverEndpoints();
+void updateHandling_Part2_initWebserverEndpoints(AsyncWebServer* p_server);
 bool updateHandling_Part2_enqueueUpdateTasks(int componentInstanceIndex);
 size_t updateHandling_Part2_getInstanceCount();
 char* updateHandling_Part2_queryVersion(int componentInstanceIndex);

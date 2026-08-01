@@ -5,9 +5,8 @@
 #include <LittleFS.h>
 #include "updateHandling.h"
 #include "updateHandling_Part1.h"
-#include "timeHandling.h"
-#include "wifiHandling.h"
 #include "version.h"
+#include "updateHandlingConfig.h"
 
 /**********************************************************************/
 
@@ -55,10 +54,10 @@ bool filenameMatchesPattern(const char* filename, const char* pattern)
 
 /**********************************************************************/
 
-void updateHandling_Part1_initWebserverEndpoints()
+void updateHandling_Part1_initWebserverEndpoints(AsyncWebServer* p_server)
 {
     // Filesystem backup/restore endpoints (used by the web UI to download/upload files)
-    server.on("/fs/backup_file_list", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/backup_file_list", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<2048> doc;
         JsonArray arr = doc.to<JsonArray>();
@@ -112,7 +111,7 @@ void updateHandling_Part1_initWebserverEndpoints()
         request->send(200, "application/json", out);
     });
 
-    server.on("/fs/download", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/download", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         if (!request->hasParam("file"))
         {
@@ -131,7 +130,7 @@ void updateHandling_Part1_initWebserverEndpoints()
     });
 
     // Upload handler: client uploads files (used for restore). The onUpload lambda handles file chunks.
-    server.on("/fs/upload", HTTP_POST, [](AsyncWebServerRequest *request){ request->send(200, "text/plain", "OK"); },
+    p_server->on("/fs/upload", HTTP_POST, [](AsyncWebServerRequest *request){ request->send(200, "text/plain", "OK"); },
         [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
     {
         static File uploadFile;
@@ -146,13 +145,13 @@ void updateHandling_Part1_initWebserverEndpoints()
     });
 
     // Confirmation endpoints: the web UI should call these after it finished backup/restore actions
-    server.on("/fs/backup_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/backup_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         fsBackupConfirmed = true;
         request->send(200, "text/plain", "OK");
     });
 
-    server.on("/fs/restore_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/restore_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         fsRestoreConfirmed = true;
         request->send(200, "text/plain", "OK");
@@ -170,14 +169,6 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
         #endif
         return false;
     }
-    if(isTimeValid == false)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
-        #endif
-        return false;
-    }
-
     #ifdef DEBUG_OUTPUT
         Serial.printf_P(PSTR("[Update Handling Part1] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
     #endif
@@ -215,8 +206,8 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(&session);
-    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setSession(p_wifiSession);
+    clientSecure.setTrustAnchors(p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fsUpdateResult = true;
@@ -259,13 +250,6 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
         #endif
         return false;
     }
-    if(isTimeValid == false)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
-        #endif
-        return false;
-    }
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
@@ -300,8 +284,8 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(&session);
-    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setSession(p_wifiSession);
+    clientSecure.setTrustAnchors(p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fwUpdateResult = true;

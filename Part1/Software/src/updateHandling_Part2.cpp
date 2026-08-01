@@ -6,8 +6,6 @@
 #include <MD5Builder.h>
 #include "updateHandling.h"
 #include "updateHandling_Part2.h"
-#include "timeHandling.h"
-#include "wifiHandling.h"
 #include "part2ActionHub.h"
 
 /**********************************************************************/
@@ -70,8 +68,8 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     }
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(&session);
-    clientSecure.setTrustAnchors(&certList);
+    clientSecure.setSession(p_wifiSession);
+    clientSecure.setTrustAnchors(p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     HTTPClient http;
@@ -192,9 +190,9 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
 
 /**********************************************************************/
 
-void updateHandling_Part2_initWebserverEndpoints()
+void updateHandling_Part2_initWebserverEndpoints(AsyncWebServer* p_server)
 {
-    server.on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         if(!part2ActionHub_isAPOpen)
         {
@@ -213,7 +211,7 @@ void updateHandling_Part2_initWebserverEndpoints()
     
     /*--------------------------------------------------------------------*/
 
-    server.on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         connectionEstablished = true;
         if(!updateInfo_Part2.valid)
@@ -226,7 +224,7 @@ void updateHandling_Part2_initWebserverEndpoints()
     
     /*--------------------------------------------------------------------*/
     
-    server.on("/update/part2_report", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/update/part2_report", HTTP_POST, [](AsyncWebServerRequest *request)
     {
         if (request->hasParam("progress", true))
         {
@@ -249,13 +247,6 @@ bool updateHandling_Part2_performUpdateTask_PREPARE(update_task_t& updateTask)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part2] No valid update info available"));
-        #endif
-        return false;
-    }
-    if(isTimeValid == false)
-    {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part2] Time is not valid yet, cannot check for updates because SSL certificate validation will fail. Try again later..."));
         #endif
         return false;
     }

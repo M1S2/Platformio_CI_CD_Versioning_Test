@@ -2,7 +2,7 @@
 #define UPDATE_HANDLING_H
 
 #include <Arduino.h>
-#include "config.h"
+#include <ESPAsyncWebServer.h>
 #include "genericQueue.h"
 
 enum UpdateChannels
@@ -11,6 +11,7 @@ enum UpdateChannels
     UPDATE_CHANNEL_DEV
 };
 
+#warning Change from enum to something else to be more generic
 enum UpdateComponents
 {
     UPDATE_COMPONENT_NONE,
@@ -39,9 +40,6 @@ enum UpdateSteps
     UPDATE_STEP_RESTART,
     UPDATE_STEP_FINISHED
 };
-
-#define UPDATE_COMPONENT_NAME_PART1 "part1"
-#define UPDATE_COMPONENT_NAME_PART2 "part2"
 
 typedef struct update_status
 {
@@ -86,6 +84,7 @@ struct update_task
 typedef bool (*update_enqueue_handler_t)(int componentInstanceIndex);
 typedef size_t (*update_get_instance_count_handler_t)();
 typedef char* (*update_query_version_handler_t)(int componentInstanceIndex);
+typedef void (*update_init_webserver_endpoints_handler_t)(AsyncWebServer* p_server);
 typedef struct
 {
     UpdateComponents component;
@@ -94,6 +93,7 @@ typedef struct
     update_enqueue_handler_t enqueueHandler;
     update_get_instance_count_handler_t getInstanceCountHandler;
     update_query_version_handler_t queryVersionHandler;
+    update_init_webserver_endpoints_handler_t initWebserverEndpointsHandler;
 } update_component_definition_t;
 
 /**********************************************************************/
@@ -101,9 +101,12 @@ typedef struct
 #define UPDATE_QUEUE_SIZE 15
 extern GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
 
+extern Session* p_wifiSession;
+extern X509List* p_wifiCertList;
+
 /**********************************************************************/
 
-void updateHandling_initWebserverEndpoints();
+void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList);
 void updateHandling_loop();
 bool updateHandling_startFetchingNewestVersionInfos();
 void updateHandling_enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex);

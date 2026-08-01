@@ -154,6 +154,9 @@ void setup()
 void loop()
 {
     wifiHandling_loop();
-    updateHandling_loop();
+    if(isTimeValid)
+    {
+        updateHandling_loop();
+    }
     part2ActionHub_handleAPTimeout();
 }

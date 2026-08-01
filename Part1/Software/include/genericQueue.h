@@ -1,8 +1,6 @@
 #ifndef UPDATE_QUEUE_H
 #define UPDATE_QUEUE_H
 
-#include <Arduino.h>
-
 template <typename T, size_t SIZE>
 class GenericQueue
 {
