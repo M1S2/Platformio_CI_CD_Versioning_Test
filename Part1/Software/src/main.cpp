@@ -158,5 +158,11 @@ void loop()
     {
         updateHandling_loop();
     }
+    else
+    {
+        #ifdef DEBUG_OUTPUT
+            Serial.println(F("[Main Loop] Time is not valid yet, skipping updateHandling_loop()"));
+        #endif
+    }
     part2ActionHub_handleAPTimeout();
 }

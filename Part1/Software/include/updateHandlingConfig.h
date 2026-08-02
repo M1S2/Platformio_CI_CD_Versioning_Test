@@ -4,6 +4,7 @@
 #include "updateHandling.h"
 #include "updateHandling_Part1.h"
 #include "updateHandling_Part2.h"
+#include "config.h"
 
 /**********************************************************************/
 /* UPDATE HANDLING */

@@ -155,12 +155,15 @@ async function updatePerformBackup(meta)
 		const id = 'backup-latest';
 		await updateBackup_SaveSnapshot(id, entries, Object.assign({ source: 'auto', count: entries.length }, meta || {}));
 		console.log('Auto-backup saved to IndexedDB with id', id);
-		await fetch('/fs/backup_confirm', { method: 'POST' });
 	}
 	catch (err)
 	{
 		console.error('performBackup failed', err);
 		throw err;
+	}
+	finally
+	{
+		await fetch('/fs/backup_confirm', { method: 'POST' });
 	}
 }
 
@@ -173,6 +176,7 @@ async function updatePerformRestore()
 		if (!snap)
 		{
 			console.warn('No backup snapshots available in IndexedDB');
+			await fetch('/fs/restore_confirm', { method: 'POST' });
 			return;
 		}
 		console.log('Auto-restoring snapshot', snap.id, 'with', (snap.files || []).length, 'files');
@@ -183,7 +187,6 @@ async function updatePerformRestore()
 			form.append('file', blob, file.name);
 			await fetch('/fs/upload', { method: 'POST', body: form });
 		}
-		await fetch('/fs/restore_confirm', { method: 'POST' });
 		try
 		{
 			await updateBackup_DeleteDB();
@@ -198,6 +201,10 @@ async function updatePerformRestore()
 	{
 		console.error('performRestore failed', err);
 		throw err;
+	}
+	finally
+	{
+		await fetch('/fs/restore_confirm', { method: 'POST' });
 	}
 }
 
