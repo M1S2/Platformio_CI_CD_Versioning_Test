@@ -180,11 +180,11 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
     ESPhttpUpdate.onStart([]()
     {
         lastLoggedPercent = -1;
-        updateStatus.updateProgress = 0.0f;
+        updateHandling.updateStatus.updateProgress = 0.0f;
     });
     ESPhttpUpdate.onEnd([]()
     {
-        updateStatus.updateProgress = 100.0f;
+        updateHandling.updateStatus.updateProgress = 100.0f;
     });
     ESPhttpUpdate.onProgress([](int cur, int total)
     {        
@@ -201,13 +201,13 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
         #ifdef DEBUG_OUTPUT
             Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         #endif
-        updateStatus.updateProgress = percent;                
+        updateHandling.updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(p_wifiSession);
-    clientSecure.setTrustAnchors(p_wifiCertList);
+    clientSecure.setSession(updateHandling.p_wifiSession);
+    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fsUpdateResult = true;
@@ -258,11 +258,11 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
     ESPhttpUpdate.onStart([]()
     {
         lastLoggedPercent = -1;
-        updateStatus.updateProgress = 0.0f;
+        updateHandling.updateStatus.updateProgress = 0.0f;
     });
     ESPhttpUpdate.onEnd([]()
     {
-        updateStatus.updateProgress = 100.0f;
+        updateHandling.updateStatus.updateProgress = 100.0f;
     });
     ESPhttpUpdate.onProgress([](int cur, int total)
     {        
@@ -279,13 +279,13 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
         #ifdef DEBUG_OUTPUT
             Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         #endif
-        updateStatus.updateProgress = percent;                
+        updateHandling.updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(p_wifiSession);
-    clientSecure.setTrustAnchors(p_wifiCertList);
+    clientSecure.setSession(updateHandling.p_wifiSession);
+    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fwUpdateResult = true;
@@ -321,7 +321,7 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
 
 bool updateHandling_Part1_performUpdateTask_RESTART(update_task_t& updateTask)
 {
-    updateStatus.state = UPDATE_STATE_RESTARTING;
+    updateHandling.updateStatus.state = UPDATE_STATE_RESTARTING;
 
     // Wait for some seconds to ensure that the HTTP response is sent completely before restarting.
     // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
@@ -399,25 +399,25 @@ bool updateHandling_Part1_enqueueUpdateTasks(int componentInstanceIndex = -1)
         fsBackupConfirmed = false;
         fsRestoreConfirmed = false;
 
-        if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_BACKUP, updateHandling_Part1_performUpdateTask_BACKUP))
+        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_BACKUP, updateHandling_Part1_performUpdateTask_BACKUP))
         {
             return false;
         }
-        if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FS, updateHandling_Part1_performUpdateTask_FS))
+        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FS, updateHandling_Part1_performUpdateTask_FS))
         {
             return false;
         }
-        if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTORE, updateHandling_Part1_performUpdateTask_RESTORE))
+        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTORE, updateHandling_Part1_performUpdateTask_RESTORE))
         {
             return false;
         }
     }
 
-    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part1_performUpdateTask_FW))
+    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part1_performUpdateTask_FW))
     {
         return false;
     }
-    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTART, updateHandling_Part1_performUpdateTask_RESTART))
+    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTART, updateHandling_Part1_performUpdateTask_RESTART))
     {
         return false;
     }

@@ -3,7 +3,10 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
 #include "genericQueue.h"
+
+#define UPDATE_QUEUE_SIZE 15
 
 enum UpdateChannels
 {
@@ -63,8 +66,6 @@ typedef struct update_info
     String fs_md5;          // MD5 hash of the filesystem binary for integrity check (if applicable, otherwise empty)
 } update_info_t;
 
-extern update_status_t updateStatus;
-
 /**********************************************************************/
 
 // Forward declaration of update task struct and typedef (otherwise we would have a circular dependency between the update task struct and the update step handler function pointer typedef)
@@ -98,18 +99,34 @@ typedef struct
 
 /**********************************************************************/
 
-#define UPDATE_QUEUE_SIZE 15
-extern GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
+class UpdateHandling
+{
+public:
+    UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName);
 
-extern Session* p_wifiSession;
-extern X509List* p_wifiCertList;
+    void initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList);
+    void loop();
+    bool startFetchingNewestVersionInfos();
+    void enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex);
+    bool enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler);
 
-/**********************************************************************/
+    bool fetchVersions();
+    void clearVersionInfos();
+    void prepareStatusDoc(const update_status_t &status, JsonDocument &doc);
+    UpdateComponents findComponentByName(const String& componentName) const;
 
-void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList);
-void updateHandling_loop();
-bool updateHandling_startFetchingNewestVersionInfos();
-void updateHandling_enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex);
-bool updateHandling_enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler);
+    GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
+    update_task_t currentUpdateTask;
+
+    update_status_t updateStatus;
+    Session* p_wifiSession;
+    X509List* p_wifiCertList;
+
+    const char* stableBaseUrl;
+    const char* devBaseUrl;
+    const char* manifestName;
+};
+
+extern UpdateHandling updateHandling;
 
 #endif

@@ -1,7 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <LittleFS.h>
 #include "updateHandling.h"
@@ -31,24 +30,25 @@ Dev Manifest Format:
 }
 */
 
-update_status_t updateStatus;
-
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
-GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue;
-update_task_t currentUpdateTask;
+UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME);
 
-Session* p_wifiSession;
-X509List* p_wifiCertList;
+UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName)
+{
+    this->stableBaseUrl = stableBaseUrl;
+    this->devBaseUrl = devBaseUrl;
+    this->manifestName = manifestName;
+}
 
 /**********************************************************************/
 
-UpdateComponents updateHandling_findComponentByName(String componentName)
+UpdateComponents UpdateHandling::findComponentByName(const String& componentName) const
 {
     for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
     {
-        update_component_definition_t definition = updateComponentDefinitions[componentIndex];
+        const update_component_definition_t &definition = updateComponentDefinitions[componentIndex];
         if(definition.componentName == componentName)
         {
             return definition.component;
@@ -59,15 +59,15 @@ UpdateComponents updateHandling_findComponentByName(String componentName)
 
 /**********************************************************************/
 
-bool updateHandling_fetchVersions()
+bool UpdateHandling::fetchVersions()
 {
     if (updateComponentDefinitionCount == 0)
     {
         return false;
     }
 
-    const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? UPDATE_STABLEBASEURL : UPDATE_DEVBASEURL;
-    String manifestUrl = String(baseUrl) + UPDATE_MANIFESTFILENAME;
+    const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
+    String manifestUrl = String(baseUrl) + manifestName;
 
     #ifdef DEBUG_OUTPUT
         Serial.printf_P(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
@@ -152,7 +152,7 @@ bool updateHandling_fetchVersions()
 
 /**********************************************************************/
 
-void updateHandling_clearVersionInfos()
+void UpdateHandling::clearVersionInfos()
 {
     for (size_t i = 0; i < updateComponentDefinitionCount; ++i)
     {
@@ -170,7 +170,7 @@ void updateHandling_clearVersionInfos()
 
 /**********************************************************************/
 
-void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument &doc)
+void UpdateHandling::prepareStatusDoc(const update_status_t &status, JsonDocument &doc)
 {
     doc["channel"] = status.currentUpdateChannel;
     doc["state"] = status.state;
@@ -182,7 +182,7 @@ void updateHandling_prepareStatusDoc(const update_status_t &status, JsonDocument
 
 /**********************************************************************/
 
-void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList)
+void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p_session, X509List* p_certList)
 {
     p_wifiSession = p_session;
     p_wifiCertList = p_certList;
@@ -193,9 +193,9 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
     static AsyncCallbackJsonWebHandler* setChannelHandler = nullptr;
     if (!setChannelHandler)
     {
-        setChannelHandler = new AsyncCallbackJsonWebHandler("/update/set_channel", [](AsyncWebServerRequest *request, JsonVariant &json)
+        setChannelHandler = new AsyncCallbackJsonWebHandler("/update/set_channel", [this](AsyncWebServerRequest *request, JsonVariant &json)
         {
-            if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
+            if(this->updateStatus.state != UPDATE_STATE_IDLE && this->updateStatus.state != UPDATE_STATE_ERROR)
             {
                 request->send(400, "text/plain", "Cannot change update channel while fetching version infos or performing an update");
                 return;
@@ -211,11 +211,11 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
             String channel = jsonObj["channel"].as<String>();
             if (channel == "dev")
             {
-                updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
+                this->updateStatus.currentUpdateChannel = UPDATE_CHANNEL_DEV;
             }
             else if (channel == "stable")
             {
-                updateStatus.currentUpdateChannel = UPDATE_CHANNEL_STABLE;
+                this->updateStatus.currentUpdateChannel = UPDATE_CHANNEL_STABLE;
             }
             else
             {
@@ -223,7 +223,7 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
                 return;
             }
 
-            updateHandling_clearVersionInfos();
+            this->clearVersionInfos();
             request->send(200, "text/plain", "Channel set to " + channel);
         });
         p_server->addHandler(setChannelHandler);
@@ -231,9 +231,9 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
     /*--------------------------------------------------------------------*/
 
-    p_server->on("/update/check", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/update/check", HTTP_POST, [this](AsyncWebServerRequest *request)
     {
-        if(updateHandling_startFetchingNewestVersionInfos())
+        if(this->startFetchingNewestVersionInfos())
         {
             request->send(200, "text/plain", "Check for updates initiated.");
         }
@@ -249,7 +249,7 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
     static AsyncCallbackJsonWebHandler* startUpdateHandler = nullptr;
     if (!startUpdateHandler)
     {
-        startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [](AsyncWebServerRequest *request, JsonVariant &json)
+        startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [this](AsyncWebServerRequest *request, JsonVariant &json)
         {
             JsonObject jsonObj = json.as<JsonObject>();
             if (!jsonObj.containsKey("component") || !jsonObj.containsKey("componentInstanceIndex"))
@@ -263,10 +263,10 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
             StaticJsonDocument<128> doc;
             int resultCode = 200;
-            UpdateComponents component = updateHandling_findComponentByName(componentStr);
+            UpdateComponents component = this->findComponentByName(componentStr);
             if (component != UPDATE_COMPONENT_NONE)
             {
-                updateHandling_enqueueUpdateTasks(component, componentInstanceIndex);
+                this->enqueueUpdateTasks(component, componentInstanceIndex);
                 doc["status"] = "ok";
                 doc["message"] = "Update for " + componentStr + " started";
             }
@@ -286,10 +286,10 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
     /*--------------------------------------------------------------------*/
 
-    p_server->on("/update/status", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/status", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<128> doc;
-        updateHandling_prepareStatusDoc(updateStatus, doc);
+        this->prepareStatusDoc(this->updateStatus, doc);
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
@@ -297,7 +297,7 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
     /*--------------------------------------------------------------------*/
 
-    p_server->on("/update/info", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/info", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
@@ -335,17 +335,17 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
     /*--------------------------------------------------------------------*/
 
-    p_server->on("/update/remaining_tasks", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/update/remaining_tasks", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<JSON_ARRAY_SIZE(UPDATE_QUEUE_SIZE) + UPDATE_QUEUE_SIZE * JSON_OBJECT_SIZE(3)> doc;
 
         JsonArray array = doc.to<JsonArray>();
 
-        size_t qSize = updateTaskQueue.size();
+        size_t qSize = this->updateTaskQueue.size();
         for (size_t i = 0; i < qSize; i++)
         {
             update_task_t task;
-            if (updateTaskQueue.getAt(i, task))
+            if (this->updateTaskQueue.getAt(i, task))
             {
                 JsonObject obj = array.createNestedObject();
                 obj["component"] = task.component;
@@ -372,13 +372,13 @@ void updateHandling_initWebserverEndpoints(AsyncWebServer* p_server, Session* p_
 
 /**********************************************************************/
 
-bool updateHandling_startFetchingNewestVersionInfos()
+bool UpdateHandling::startFetchingNewestVersionInfos()
 {
     if(updateStatus.state != UPDATE_STATE_IDLE && updateStatus.state != UPDATE_STATE_ERROR)
     {
         return false;
     }
-    updateHandling_clearVersionInfos();
+    clearVersionInfos();
     updateStatus.currentComponent = UPDATE_COMPONENT_NONE;
     // Set state to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     updateStatus.state = UPDATE_STATE_CHECKING;
@@ -387,7 +387,7 @@ bool updateHandling_startFetchingNewestVersionInfos()
 
 /**********************************************************************/
 
-bool updateHandling_enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler)
+bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler)
 {
     update_task_t task;
     task.component = component;
@@ -397,14 +397,15 @@ bool updateHandling_enqueueSingleUpdateTask(UpdateComponents component, int inst
     return updateTaskQueue.push(task);
 }
 
-void updateHandling_enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
+
+void UpdateHandling::enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
 {
     bool found = false;
     for(size_t i = 0; i < updateComponentDefinitionCount; i++)
     {
         if(updateComponentDefinitions[i].component == component)
         {
-            update_component_definition_t definition = updateComponentDefinitions[i];
+            const update_component_definition_t &definition = updateComponentDefinitions[i];
             definition.enqueueHandler(componentInstanceIndex);
             found = true;
             break;
@@ -421,7 +422,7 @@ void updateHandling_enqueueUpdateTasks(UpdateComponents component, int component
 
 /**********************************************************************/
 
-void updateHandling_loop()
+void UpdateHandling::loop()
 {
     switch (updateStatus.state)
     {
@@ -436,7 +437,7 @@ void updateHandling_loop()
         }
         case UPDATE_STATE_CHECKING:
         {
-            bool result = updateHandling_fetchVersions();
+            bool result = fetchVersions();
 
             #ifdef DEBUG_OUTPUT
                 if(result)

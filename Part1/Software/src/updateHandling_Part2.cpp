@@ -68,8 +68,8 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     }
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(p_wifiSession);
-    clientSecure.setTrustAnchors(p_wifiCertList);
+    clientSecure.setSession(updateHandling.p_wifiSession);
+    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     HTTPClient http;
@@ -150,7 +150,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             if (currentPercentInt != lastLoggedPercent)
             {
                 lastLoggedPercent = currentPercentInt;
-                updateStatus.updateProgress = percent;
+                updateHandling.updateStatus.updateProgress = percent;
                 #ifdef DEBUG_OUTPUT
                     Serial.printf_P(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
                 #endif
@@ -205,7 +205,7 @@ void updateHandling_Part2_initWebserverEndpoints(AsyncWebServer* p_server)
             request->send(404, "text/plain", "File not found");
             return;
         }
-        updateStatus.updateStep = UPDATE_STEP_FW;
+        updateHandling.updateStatus.updateStep = UPDATE_STEP_FW;
         request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
     });
     
@@ -228,12 +228,12 @@ void updateHandling_Part2_initWebserverEndpoints(AsyncWebServer* p_server)
     {
         if (request->hasParam("progress", true))
         {
-            updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
+            updateHandling.updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
         }
         if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
         {
             fwUpdateFinished = true;
-            updateStatus.updateStep = UPDATE_STEP_FINISHED;
+            updateHandling.updateStatus.updateStep = UPDATE_STEP_FINISHED;
         }
         request->send(200, "text/plain", "OK");
     });
@@ -300,15 +300,15 @@ bool updateHandling_Part2_performUpdateTask_FW(update_task_t& updateTask)
 
 bool updateHandling_Part2_enqueueUpdateTasks(int componentInstanceIndex = -1)
 {
-    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, updateHandling_Part2_performUpdateTask_PREPARE))
+    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, updateHandling_Part2_performUpdateTask_PREPARE))
     {
         return false;
     }
-    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, updateHandling_Part2_performUpdateTask_WAIT))
+    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, updateHandling_Part2_performUpdateTask_WAIT))
     {
         return false;
     }
-    if(!updateHandling_enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part2_performUpdateTask_FW))
+    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part2_performUpdateTask_FW))
     {
         return false;
     }

@@ -7,8 +7,8 @@
 #include "config.h"
 #include "wifiHandling.h"
 #include "timeHandling.h"
-#include "version.h"
 #include "updateHandling.h"
+#include "version.h"
 #include "part2ActionHub.h"
 
 void main_initWebserverEndpoints()
@@ -156,7 +156,7 @@ void loop()
     wifiHandling_loop();
     if(isTimeValid)
     {
-        updateHandling_loop();
+        updateHandling.loop();
     }
     else
     {

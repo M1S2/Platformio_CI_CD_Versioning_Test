@@ -95,7 +95,7 @@ void wifiHandling_onConnected()
         // Init the server and the handlers only once
         wifiHandling_initWebserverFiles();
         main_initWebserverEndpoints();
-        updateHandling_initWebserverEndpoints(&server, &session, &certList);
+        updateHandling.initWebserverEndpoints(&server, &session, &certList);
         part2ActionHub_initWebserverEndpoints();
         server.begin();
         webserverStarted = true;
