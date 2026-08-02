@@ -7,15 +7,98 @@
 #include "updateHandling.h"
 #include "updateHandling_Part2.h"
 #include "part2ActionHub.h"
+#include "config.h"
 
 /**********************************************************************/
 
-update_info_t updateInfo_Part2;
-
 #define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
 
-bool connectionEstablished = false;
-bool fwUpdateFinished = false;
+UpdateHandlingPart2::UpdateHandlingPart2() : UpdateHandlingComponentBase(UPDATE_COMPONENT_PART2, "part2")
+{
+}
+
+bool UpdateHandlingPart2::enqueueUpdateTasks(int componentInstanceIndex)
+{
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, UpdateHandlingPart2::performUpdateTask_PREPARE, this))
+    {
+        return false;
+    }
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, UpdateHandlingPart2::performUpdateTask_WAIT, this))
+    {
+        return false;
+    }
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart2::performUpdateTask_FW, this))
+    {
+        return false;
+    }
+    return true;
+}
+
+size_t UpdateHandlingPart2::getInstanceCount()
+{
+    #warning At the moment there are two instances of Part2. Make this variable.
+    return 2;
+}
+
+char* UpdateHandlingPart2::queryVersion(int componentInstanceIndex)
+{
+    switch (componentInstanceIndex)
+    {
+        case 0: return "?";
+        case 1: return "?";
+        default: return "?";
+    }
+    return "?"; // Default case, should not be reached
+}
+
+void UpdateHandlingPart2::initWebserverEndpoints(AsyncWebServer* p_server)
+{
+    p_server->on("/update/part2_fw.bin", HTTP_GET, [this](AsyncWebServerRequest *request)
+    {
+        if(!part2ActionHub_isAPOpen)
+        {
+            request->send(404, "text/plain", "Action hub not open");
+            return;
+        }
+        connectionEstablished = true;
+        if(!LittleFS.exists(LITTLEFS_PART2_FW_PATH))
+        {
+            request->send(404, "text/plain", "File not found");
+            return;
+        }
+        p_updateHandling->updateStatus.updateStep = UPDATE_STEP_FW;
+        request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
+    });
+    
+    /*--------------------------------------------------------------------*/
+
+    p_server->on("/update/part2_fw_md5", HTTP_GET, [this](AsyncWebServerRequest *request)
+    {
+        connectionEstablished = true;
+        if(!updateInfo.valid)
+        {
+            request->send(404, "text/plain", "No valid update info available");
+            return;
+        }
+        request->send(200, "text/plain", updateInfo.fw_md5);
+    });
+    
+    /*--------------------------------------------------------------------*/
+    
+    p_server->on("/update/part2_report", HTTP_POST, [this](AsyncWebServerRequest *request)
+    {
+        if (request->hasParam("progress", true))
+        {
+            p_updateHandling->updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
+        }
+        if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
+        {
+            fwUpdateFinished = true;
+            p_updateHandling->updateStatus.updateStep = UPDATE_STEP_FINISHED;
+        }
+        request->send(200, "text/plain", "OK");
+    });
+}
 
 /**********************************************************************/
 
@@ -41,11 +124,13 @@ String calculateFileMD5(const String &filePath)
 
 /**********************************************************************/
 
-bool updateHandling_downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5)
+bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5, update_task_t& updateTask)
 {
     #ifdef DEBUG_OUTPUT
         Serial.println(F("[Update Handling Part2] Downloading file..."));
     #endif
+
+    UpdateHandling* p_updateHandling = updateTask.componentDef->p_updateHandling;
 
     // Check, if the file already exists and the MD5 hash matches
     if (LittleFS.exists(filePath))
@@ -68,8 +153,8 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
     }
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(updateHandling.p_wifiSession);
-    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
+    clientSecure.setSession(p_updateHandling->p_wifiSession);
+    clientSecure.setTrustAnchors(p_updateHandling->p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     HTTPClient http;
@@ -150,7 +235,7 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
             if (currentPercentInt != lastLoggedPercent)
             {
                 lastLoggedPercent = currentPercentInt;
-                updateHandling.updateStatus.updateProgress = percent;
+                p_updateHandling->updateStatus.updateProgress = percent;
                 #ifdef DEBUG_OUTPUT
                     Serial.printf_P(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
                 #endif
@@ -190,78 +275,31 @@ bool updateHandling_downloadFileToLittleFS(const String &url, const String &file
 
 /**********************************************************************/
 
-void updateHandling_Part2_initWebserverEndpoints(AsyncWebServer* p_server)
+bool UpdateHandlingPart2::performUpdateTask_PREPARE(update_task_t& updateTask)
 {
-    p_server->on("/update/part2_fw.bin", HTTP_GET, [](AsyncWebServerRequest *request)
-    {
-        if(!part2ActionHub_isAPOpen)
-        {
-            request->send(404, "text/plain", "Action hub not open");
-            return;
-        }
-        connectionEstablished = true;
-        if(!LittleFS.exists(LITTLEFS_PART2_FW_PATH))
-        {
-            request->send(404, "text/plain", "File not found");
-            return;
-        }
-        updateHandling.updateStatus.updateStep = UPDATE_STEP_FW;
-        request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
-    });
-    
-    /*--------------------------------------------------------------------*/
+    UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
 
-    p_server->on("/update/part2_fw_md5", HTTP_GET, [](AsyncWebServerRequest *request)
-    {
-        connectionEstablished = true;
-        if(!updateInfo_Part2.valid)
-        {
-            request->send(404, "text/plain", "No valid update info available");
-            return;
-        }
-        request->send(200, "text/plain", updateInfo_Part2.fw_md5);
-    });
-    
-    /*--------------------------------------------------------------------*/
-    
-    p_server->on("/update/part2_report", HTTP_POST, [](AsyncWebServerRequest *request)
-    {
-        if (request->hasParam("progress", true))
-        {
-            updateHandling.updateStatus.updateProgress = request->getParam("progress", true)->value().toFloat();
-        }
-        if (request->hasParam("finished", true) && request->getParam("finished", true)->value() == "true")
-        {
-            fwUpdateFinished = true;
-            updateHandling.updateStatus.updateStep = UPDATE_STEP_FINISHED;
-        }
-        request->send(200, "text/plain", "OK");
-    });
-}
-
-/**********************************************************************/
-
-bool updateHandling_Part2_performUpdateTask_PREPARE(update_task_t& updateTask)
-{
-    if (!updateInfo_Part2.valid)
+    if (!p_componentDef->updateInfo.valid)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part2] No valid update info available"));
         #endif
         return false;
     }
-    return updateHandling_downloadFileToLittleFS(updateInfo_Part2.url_fw, LITTLEFS_PART2_FW_PATH, updateInfo_Part2.fw_md5);
+    return downloadFileToLittleFS(p_componentDef->updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, p_componentDef->updateInfo.fw_md5, updateTask);
 }
 
 /**********************************************************************/
 
-bool updateHandling_Part2_performUpdateTask_WAIT(update_task_t& updateTask)
+bool UpdateHandlingPart2::performUpdateTask_WAIT(update_task_t& updateTask)
 {
-    connectionEstablished = false;
-    fwUpdateFinished = false;
+    UpdateHandlingPart2* p_componentPart2 = (UpdateHandlingPart2*)updateTask.componentDef;
+    
+    p_componentPart2->connectionEstablished = false;
+    p_componentPart2->fwUpdateFinished = false;
     if(!part2ActionHub_startAP(PART2ACTIONHUB_ACTION_UPDATE)) { return false; }
 
-    while(!connectionEstablished)
+    while(!p_componentPart2->connectionEstablished)
     {
         if(part2ActionHub_handleAPTimeout())
         {
@@ -270,14 +308,15 @@ bool updateHandling_Part2_performUpdateTask_WAIT(update_task_t& updateTask)
         }
         yield();
     }
-    return connectionEstablished;
+    return p_componentPart2->connectionEstablished;
 }
 
 /**********************************************************************/
 
-bool updateHandling_Part2_performUpdateTask_FW(update_task_t& updateTask)
+bool UpdateHandlingPart2::performUpdateTask_FW(update_task_t& updateTask)
 {
-    while(!fwUpdateFinished)
+    UpdateHandlingPart2* p_componentPart2 = (UpdateHandlingPart2*)updateTask.componentDef;
+    while(!p_componentPart2->fwUpdateFinished)
     {
         if(part2ActionHub_handleAPTimeout())
         {
@@ -293,45 +332,5 @@ bool updateHandling_Part2_performUpdateTask_FW(update_task_t& updateTask)
     {
         LittleFS.remove(LITTLEFS_PART2_FW_PATH);
     }
-    return fwUpdateFinished;
-}
-
-/**********************************************************************/
-
-bool updateHandling_Part2_enqueueUpdateTasks(int componentInstanceIndex = -1)
-{
-    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, updateHandling_Part2_performUpdateTask_PREPARE))
-    {
-        return false;
-    }
-    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, updateHandling_Part2_performUpdateTask_WAIT))
-    {
-        return false;
-    }
-    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part2_performUpdateTask_FW))
-    {
-        return false;
-    }
-    return true;
-}
-
-/**********************************************************************/
-
-size_t updateHandling_Part2_getInstanceCount()
-{
-#warning At the moment there are two instances of Part2. Make this variable.
-    return 2;
-}
-
-/**********************************************************************/
-
-char* updateHandling_Part2_queryVersion(int componentInstanceIndex = -1)
-{
-    switch (componentInstanceIndex)
-    {
-        case 0: return "?";
-        case 1: return "?";
-        default: return "?";
-    }
-    return "?"; // Default case, should not be reached
+    return p_componentPart2->fwUpdateFinished;
 }

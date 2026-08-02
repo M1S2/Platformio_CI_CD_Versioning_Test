@@ -13,6 +13,16 @@
 #define CONFIGURATION_PORTAL_TIMEOUT_MS 60000       // Timeout for the configuration portal (if this time is exceeded, the portal is closed and a new connection attempt to the router is made)
 
 /**********************************************************************/
+/* UPDATE HANDLING */
+
+#define UPDATE_STABLEBASEURL                    "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/"
+#define UPDATE_DEVBASEURL                       "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/"
+#define UPDATE_MANIFESTFILENAME                 "manifest.json"
+
+#define UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS    60000                               // Timeout in ms for the part1 backup/restore process. Use 0 to disable the timeout and keep the process active until it is manually stopped.
+#define UPDATE_BACKUP_FILES_ARRAY               { "testfile.txt", "data*.bin" }     // List of files/patterns to include in the backup. Supports both fixed paths ("/config.bin") and wildcard patterns ("/dataSensor*.bin").
+
+/**********************************************************************/
 /* PART2 ACTION HUB CONFIGURATION */
 
 #define PART2ACTIONHUB_AP_NAME_BASE    "TestActionHub-"     // Base name for the part2 action hub access point (it is appended by the chip id to make it unique)

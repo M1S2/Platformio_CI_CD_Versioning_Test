@@ -6,68 +6,74 @@
 #include "updateHandling.h"
 #include "updateHandling_Part1.h"
 #include "version.h"
-#include "updateHandlingConfig.h"
+#include "config.h"
 
 /**********************************************************************/
 
-update_info_t updateInfo_Part1;
+// Static member initialization
+unsigned long UpdateHandlingPart1::backupRestoreTimeoutMs = 0;
 
-// Flags used to synchronize with the web UI for backup/restore operations
-volatile bool fsBackupConfirmed = false;
-volatile bool fsRestoreConfirmed = false;
-
-/**********************************************************************/
-
-// Helper function: Check if filename matches a pattern (supports * wildcard)
-bool filenameMatchesPattern(const char* filename, const char* pattern)
+UpdateHandlingPart1::UpdateHandlingPart1(unsigned long backupRestoreTimeoutMs, const char** filesForBackup, size_t filesForBackupCount) : UpdateHandlingComponentBase(UPDATE_COMPONENT_PART1, "part1")
 {
-    while (*pattern)
+    UpdateHandlingPart1::backupRestoreTimeoutMs = backupRestoreTimeoutMs;
+    this->filesForBackup = filesForBackup;
+    this->filesForBackupCount = filesForBackupCount;
+}
+
+bool UpdateHandlingPart1::enqueueUpdateTasks(int componentInstanceIndex)
+{
+    if (updateInfo.valid && updateInfo.has_fs_update)
     {
-        if (*pattern == '*')
+        fsBackupConfirmed = false;
+        fsRestoreConfirmed = false;
+
+        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_BACKUP, UpdateHandlingPart1::performUpdateTask_BACKUP, this))
         {
-            // If * is at the end of pattern, it matches everything remaining
-            if (*(pattern + 1) == '\0')
-                return true;
-            
-            // Find the next non-wildcard character in pattern
-            pattern++;
-            while (*filename && *filename != *pattern)
-                filename++;
-            
-            // Skip wildcard in pattern
-            if (!*filename && *pattern)
-                return false;
+            return false;
         }
-        else if (*filename == *pattern)
+        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_FS, UpdateHandlingPart1::performUpdateTask_FS, this))
         {
-            filename++;
-            pattern++;
+            return false;
         }
-        else
+        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_RESTORE, UpdateHandlingPart1::performUpdateTask_RESTORE, this))
         {
             return false;
         }
     }
-    
-    return *filename == '\0';
+
+    if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart1::performUpdateTask_FW, this))
+    {
+        return false;
+    }
+    if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_RESTART, UpdateHandlingPart1::performUpdateTask_RESTART, this))
+    {
+        return false;
+    }
+    return true;
 }
 
-/**********************************************************************/
+size_t UpdateHandlingPart1::getInstanceCount()
+{
+    return 1;
+}
 
-void updateHandling_Part1_initWebserverEndpoints(AsyncWebServer* p_server)
+char* UpdateHandlingPart1::queryVersion(int componentInstanceIndex)
+{
+    return FW_VERSION;
+}
+
+void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
 {
     // Filesystem backup/restore endpoints (used by the web UI to download/upload files)
-    p_server->on("/fs/backup_file_list", HTTP_GET, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/backup_file_list", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
         StaticJsonDocument<2048> doc;
         JsonArray arr = doc.to<JsonArray>();
         
-        const char* filesForBackup[] = UPDATE_BACKUP_FILES_ARRAY;
-        size_t filesForBackupCount = sizeof(filesForBackup) / sizeof(filesForBackup[0]);
         // Check each pattern against files in LittleFS
         for (size_t i = 0; i < filesForBackupCount; i++)
         {
-            const char* pattern = filesForBackup[i];
+            const char* pattern = this->filesForBackup[i];
             
             // Check if pattern contains wildcard
             if (strchr(pattern, '*'))
@@ -129,7 +135,6 @@ void updateHandling_Part1_initWebserverEndpoints(AsyncWebServer* p_server)
         request->send(response);
     });
 
-    // Upload handler: client uploads files (used for restore). The onUpload lambda handles file chunks.
     p_server->on("/fs/upload", HTTP_POST, [](AsyncWebServerRequest *request){ request->send(200, "text/plain", "OK"); },
         [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
     {
@@ -144,14 +149,13 @@ void updateHandling_Part1_initWebserverEndpoints(AsyncWebServer* p_server)
         if (final && uploadFile) uploadFile.close();
     });
 
-    // Confirmation endpoints: the web UI should call these after it finished backup/restore actions
-    p_server->on("/fs/backup_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/backup_confirm", [this](AsyncWebServerRequest *request)
     {
         fsBackupConfirmed = true;
         request->send(200, "text/plain", "OK");
     });
 
-    p_server->on("/fs/restore_confirm", HTTP_POST, [](AsyncWebServerRequest *request)
+    p_server->on("/fs/restore_confirm", [this](AsyncWebServerRequest *request)
     {
         fsRestoreConfirmed = true;
         request->send(200, "text/plain", "OK");
@@ -160,9 +164,48 @@ void updateHandling_Part1_initWebserverEndpoints(AsyncWebServer* p_server)
 
 /**********************************************************************/
 
-bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
+// Helper function: Check if filename matches a pattern (supports * wildcard)
+bool UpdateHandlingPart1::filenameMatchesPattern(const char* filename, const char* pattern)
 {
-    if (!updateInfo_Part1.valid || !updateInfo_Part1.has_fs_update)
+    while (*pattern)
+    {
+        if (*pattern == '*')
+        {
+            // If * is at the end of pattern, it matches everything remaining
+            if (*(pattern + 1) == '\0')
+                return true;
+            
+            // Find the next non-wildcard character in pattern
+            pattern++;
+            while (*filename && *filename != *pattern)
+                filename++;
+            
+            // Skip wildcard in pattern
+            if (!*filename && *pattern)
+                return false;
+        }
+        else if (*filename == *pattern)
+        {
+            filename++;
+            pattern++;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    
+    return *filename == '\0';
+}
+
+/**********************************************************************/
+
+bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
+{
+    UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
+
+    if (!p_componentDef->updateInfo.valid || !p_componentDef->updateInfo.has_fs_update)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part1] No valid update info available or no filesystem update included in the update"));
@@ -177,16 +220,16 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
     ESPhttpUpdate.setClientTimeout(10000);
     static int lastLoggedPercent = -1;
 
-    ESPhttpUpdate.onStart([]()
+    ESPhttpUpdate.onStart([p_updateHandling]()
     {
         lastLoggedPercent = -1;
-        updateHandling.updateStatus.updateProgress = 0.0f;
+        p_updateHandling->updateStatus.updateProgress = 0.0f;
     });
-    ESPhttpUpdate.onEnd([]()
+    ESPhttpUpdate.onEnd([p_updateHandling]()
     {
-        updateHandling.updateStatus.updateProgress = 100.0f;
+        p_updateHandling->updateStatus.updateProgress = 100.0f;
     });
-    ESPhttpUpdate.onProgress([](int cur, int total)
+    ESPhttpUpdate.onProgress([p_updateHandling](int cur, int total)
     {        
         float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
         int currentPercentInt = (int)percent;
@@ -201,22 +244,22 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
         #ifdef DEBUG_OUTPUT
             Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         #endif
-        updateHandling.updateStatus.updateProgress = percent;                
+        p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(updateHandling.p_wifiSession);
-    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
+    clientSecure.setSession(p_updateHandling->p_wifiSession);
+    clientSecure.setTrustAnchors(p_updateHandling->p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fsUpdateResult = true;
     #ifdef DEBUG_OUTPUT
         Serial.println(F("[Update Handling Part1] Update file system..."));
     #endif
-    ESPhttpUpdate.setMD5sum(updateInfo_Part1.fs_md5);
+    ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fs_md5);
     ESPhttpUpdate.rebootOnUpdate(false); // prevent automatic reboot so we can restore files afterwards
-    t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, updateInfo_Part1.url_fs);
+    t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, p_componentDef->updateInfo.url_fs);
     switch (returnFsUpdate)
     {
         case HTTP_UPDATE_FAILED:
@@ -241,30 +284,33 @@ bool updateHandling_Part1_performUpdateTask_FS(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
+bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
 {
-    if (!updateInfo_Part1.valid)
+    UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
+
+    if (!p_componentDef->updateInfo.valid)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part1] No valid update info available"));
         #endif
         return false;
     }
-
+    
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
     static int lastLoggedPercent = -1;
 
-    ESPhttpUpdate.onStart([]()
+    ESPhttpUpdate.onStart([p_updateHandling]()
     {
         lastLoggedPercent = -1;
-        updateHandling.updateStatus.updateProgress = 0.0f;
+        p_updateHandling->updateStatus.updateProgress = 0.0f;
     });
-    ESPhttpUpdate.onEnd([]()
+    ESPhttpUpdate.onEnd([p_updateHandling]()
     {
-        updateHandling.updateStatus.updateProgress = 100.0f;
+        p_updateHandling->updateStatus.updateProgress = 100.0f;
     });
-    ESPhttpUpdate.onProgress([](int cur, int total)
+    ESPhttpUpdate.onProgress([p_updateHandling](int cur, int total)
     {        
         float percent = (total > 0) ? (100.0f * cur / total) : 0.0f;
         int currentPercentInt = (int)percent;
@@ -279,22 +325,22 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
         #ifdef DEBUG_OUTPUT
             Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         #endif
-        updateHandling.updateStatus.updateProgress = percent;                
+        p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
 
     WiFiClientSecure clientSecure;
-    clientSecure.setSession(updateHandling.p_wifiSession);
-    clientSecure.setTrustAnchors(updateHandling.p_wifiCertList);
+    clientSecure.setSession(p_updateHandling->p_wifiSession);
+    clientSecure.setTrustAnchors(p_updateHandling->p_wifiCertList);
     clientSecure.setBufferSizes(16384, 512);
 
     bool fwUpdateResult = true;
     #ifdef DEBUG_OUTPUT
         Serial.println(F("[Update Handling Part1] Update firmware..."));
     #endif
-    ESPhttpUpdate.setMD5sum(updateInfo_Part1.fw_md5);
+    ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fw_md5);
     ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
-    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(clientSecure, updateInfo_Part1.url_fw);
+    t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(clientSecure, p_componentDef->updateInfo.url_fw);
     switch (returnFwUpdate)
     {
         case HTTP_UPDATE_FAILED:
@@ -319,9 +365,11 @@ bool updateHandling_Part1_performUpdateTask_FW(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool updateHandling_Part1_performUpdateTask_RESTART(update_task_t& updateTask)
+bool UpdateHandlingPart1::performUpdateTask_RESTART(update_task_t& updateTask)
 {
-    updateHandling.updateStatus.state = UPDATE_STATE_RESTARTING;
+    UpdateHandling* p_updateHandling = updateTask.componentDef->p_updateHandling;
+    
+    p_updateHandling->updateStatus.state = UPDATE_STATE_RESTARTING;
 
     // Wait for some seconds to ensure that the HTTP response is sent completely before restarting.
     // This is especially important if the update was triggered via the web interface, because otherwise the web interface might not receive the response and thus not know that the update was successful.
@@ -336,22 +384,24 @@ bool updateHandling_Part1_performUpdateTask_RESTART(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool updateHandling_Part1_performUpdateTask_BACKUP(update_task_t& updateTask)
+bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
 {
+    UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
+
     // If there is no FS update, nothing to backup
-    if (!updateInfo_Part1.valid || !updateInfo_Part1.has_fs_update)
+    if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
     {
         return true;
     }
 
     // Wait for confirmation
     unsigned long start = millis();
-    while (!fsBackupConfirmed && (UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS == 0 || (millis() - start) < UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS))
+    while (!p_componentPart1->fsBackupConfirmed && (UpdateHandlingPart1::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingPart1::backupRestoreTimeoutMs))
     {
         yield();
     }
 
-    if (!fsBackupConfirmed)
+    if (!p_componentPart1->fsBackupConfirmed)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part1] FS backup confirmation timed out"));
@@ -363,22 +413,24 @@ bool updateHandling_Part1_performUpdateTask_BACKUP(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool updateHandling_Part1_performUpdateTask_RESTORE(update_task_t& updateTask)
+bool UpdateHandlingPart1::performUpdateTask_RESTORE(update_task_t& updateTask)
 {
+    UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
+
     // If there is no FS update, nothing to restore
-    if (!updateInfo_Part1.valid || !updateInfo_Part1.has_fs_update)
+    if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
     {
         return true;
     }
 
     // Wait for confirmation
     unsigned long start = millis();
-    while (!fsRestoreConfirmed && (UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS == 0 || (millis() - start) < UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS))
+    while (!p_componentPart1->fsRestoreConfirmed && (UpdateHandlingPart1::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingPart1::backupRestoreTimeoutMs))
     {
         yield();
     }
 
-    if (!fsRestoreConfirmed)
+    if (!p_componentPart1->fsRestoreConfirmed)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[Update Handling Part1] FS restore confirmation timed out"));
@@ -386,57 +438,4 @@ bool updateHandling_Part1_performUpdateTask_RESTORE(update_task_t& updateTask)
         return false;
     }
     return true;
-}
-
-/**********************************************************************/
-
-bool updateHandling_Part1_enqueueUpdateTasks(int componentInstanceIndex = -1)
-{
-    // If a filesystem update is available, enqueue backup -> fs update -> restore
-    if (updateInfo_Part1.valid && updateInfo_Part1.has_fs_update)
-    {
-        // Reset confirmation flags
-        fsBackupConfirmed = false;
-        fsRestoreConfirmed = false;
-
-        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_BACKUP, updateHandling_Part1_performUpdateTask_BACKUP))
-        {
-            return false;
-        }
-        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FS, updateHandling_Part1_performUpdateTask_FS))
-        {
-            return false;
-        }
-        if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTORE, updateHandling_Part1_performUpdateTask_RESTORE))
-        {
-            return false;
-        }
-    }
-
-    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_FW, updateHandling_Part1_performUpdateTask_FW))
-    {
-        return false;
-    }
-    if(!updateHandling.enqueueSingleUpdateTask(UPDATE_COMPONENT_PART1, componentInstanceIndex, UPDATE_STEP_RESTART, updateHandling_Part1_performUpdateTask_RESTART))
-    {
-        return false;
-    }
-    return true;
-}
-
-
-/**********************************************************************/
-
-size_t updateHandling_Part1_getInstanceCount()
-{
-    // There is only one instance of Part1, so we can return 1
-    return 1;
-}
-
-/**********************************************************************/
-
-char* updateHandling_Part1_queryVersion(int componentInstanceIndex = -1)
-{
-    // There is only one instance of Part1, so we can ignore the componentInstanceIndex parameter
-    return FW_VERSION;
 }

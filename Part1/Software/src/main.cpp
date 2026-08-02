@@ -7,9 +7,13 @@
 #include "config.h"
 #include "wifiHandling.h"
 #include "timeHandling.h"
-#include "updateHandling.h"
 #include "version.h"
 #include "part2ActionHub.h"
+
+const char* filesForPart1Backup[] = UPDATE_BACKUP_FILES_ARRAY;
+UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME);
+UpdateHandlingPart1 updateHandlingPart1(UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS, filesForPart1Backup, sizeof(filesForPart1Backup) / sizeof(filesForPart1Backup[0]));
+UpdateHandlingPart2 updateHandlingPart2;
 
 void main_initWebserverEndpoints()
 {
@@ -145,6 +149,10 @@ void setup()
     wifiHandling_init();
     delay(1000);
     timeHandling_printNowSerial();
+
+    // Register the available update components
+    updateHandling.registerComponent(&updateHandlingPart1);
+    updateHandling.registerComponent(&updateHandlingPart2);
 
     digitalWrite(LED_BUILTIN, LOW);            // Turn on LED
 }

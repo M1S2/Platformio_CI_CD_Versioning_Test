@@ -4,7 +4,6 @@
 #include <AsyncJson.h>
 #include <LittleFS.h>
 #include "updateHandling.h"
-#include "updateHandlingConfig.h"
 
 /*
 Stable Manifest Format:
@@ -33,8 +32,6 @@ Dev Manifest Format:
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
-UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME);
-
 UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName)
 {
     this->stableBaseUrl = stableBaseUrl;
@@ -44,14 +41,62 @@ UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl
 
 /**********************************************************************/
 
+UpdateHandling::~UpdateHandling()
+{
+    if (this->updateComponents)
+    {
+        delete[] this->updateComponents;
+        this->updateComponents = nullptr;
+    }
+    this->updateComponentCount = 0;
+}
+
+bool UpdateHandling::registerComponent(UpdateHandlingComponentBase* component)
+{
+    if (component == nullptr) return false;
+
+    for (size_t i = 0; i < this->updateComponentCount; ++i)
+    {
+        if (this->updateComponents[i] == component) return true;
+    }
+
+    UpdateHandlingComponentBase** newArray = new UpdateHandlingComponentBase*[this->updateComponentCount + 1];
+    for (size_t i = 0; i < this->updateComponentCount; ++i)
+    {
+        newArray[i] = this->updateComponents[i];
+    }
+    newArray[this->updateComponentCount] = component;
+
+    if (this->updateComponents)
+    {
+        delete[] this->updateComponents;
+    }
+    this->updateComponents = newArray;
+    ++this->updateComponentCount;
+    component->p_updateHandling = this;
+    return true;
+}
+
+size_t UpdateHandling::getComponentCount() const
+{
+    return this->updateComponentCount;
+}
+
+UpdateHandlingComponentBase* UpdateHandling::getComponentAt(size_t index) const
+{
+    return (index < this->updateComponentCount) ? this->updateComponents[index] : nullptr;
+}
+
+/**********************************************************************/
+
 UpdateComponents UpdateHandling::findComponentByName(const String& componentName) const
 {
-    for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
+    for (size_t componentIndex = 0; componentIndex < this->getComponentCount(); ++componentIndex)
     {
-        const update_component_definition_t &definition = updateComponentDefinitions[componentIndex];
-        if(definition.componentName == componentName)
+        const UpdateHandlingComponentBase* component = this->getComponentAt(componentIndex);
+        if(component && component->componentName == componentName)
         {
-            return definition.component;
+            return component->component;
         }
     }
     return UPDATE_COMPONENT_NONE;
@@ -61,7 +106,7 @@ UpdateComponents UpdateHandling::findComponentByName(const String& componentName
 
 bool UpdateHandling::fetchVersions()
 {
-    if (updateComponentDefinitionCount == 0)
+    if (this->getComponentCount() == 0)
     {
         return false;
     }
@@ -108,11 +153,12 @@ bool UpdateHandling::fetchVersions()
     }
 
     bool anyValid = false;
-    for (size_t i = 0; i < updateComponentDefinitionCount; ++i)
+    for (size_t i = 0; i < this->getComponentCount(); ++i)
     {
-        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
-        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
-        const String componentName = updateComponentDefinitions[i].componentName;
+        UpdateHandlingComponentBase* component = this->getComponentAt(i);
+        if(component == nullptr) { continue; }
+        update_info_t &info = component->updateInfo;
+        const String componentName = component->componentName;
         info.componentName = componentName;
         info.valid = false;
         info.version = "";
@@ -154,10 +200,11 @@ bool UpdateHandling::fetchVersions()
 
 void UpdateHandling::clearVersionInfos()
 {
-    for (size_t i = 0; i < updateComponentDefinitionCount; ++i)
+    for (size_t i = 0; i < this->getComponentCount(); ++i)
     {
-        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
-        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
+        UpdateHandlingComponentBase* component = this->getComponentAt(i);
+        if(component == nullptr) { continue; }
+        update_info_t &info = component->updateInfo;
         info.valid = false;
         info.version = "";
         info.url_fw = "";
@@ -302,16 +349,16 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
         StaticJsonDocument<1024> doc;
         JsonArray componentsArray = doc.createNestedArray("components");
 
-        for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
+        for (size_t componentIndex = 0; componentIndex < this->getComponentCount(); ++componentIndex)
         {
-            if(updateComponentDefinitions[componentIndex].updateInfo == nullptr) { continue; }
-            update_component_definition_t definition = updateComponentDefinitions[componentIndex];
-            update_info_t &info = *definition.updateInfo;
-            size_t instanceCount = definition.getInstanceCountHandler();
+            UpdateHandlingComponentBase* componentDef = this->getComponentAt(componentIndex);
+            if(componentDef == nullptr) { continue; }
+            update_info_t &info = componentDef->updateInfo;
+            size_t instanceCount = componentDef->getInstanceCount();
 
             JsonObject component = componentsArray.createNestedObject();
-            component["id"] = definition.component;
-            component["name"] = definition.componentName;
+            component["id"] = componentDef->component;
+            component["name"] = componentDef->componentName;
             component["available"] = info.valid;
             component["has_fs_update"] = info.has_fs_update;
             component["version"] = info.version;
@@ -324,7 +371,7 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
             JsonArray versionsArray = component.createNestedArray("currentVersions");
             for (size_t instanceIndex = 0; instanceIndex < instanceCount; ++instanceIndex)
             {
-                versionsArray.add(definition.queryVersionHandler(instanceIndex));
+                versionsArray.add(componentDef->queryVersion(instanceIndex));
             }
         }
 
@@ -360,12 +407,12 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
 
     /*--------------------------------------------------------------------*/
 
-    for (size_t componentIndex = 0; componentIndex < updateComponentDefinitionCount; ++componentIndex)
+    for (size_t componentIndex = 0; componentIndex < this->getComponentCount(); ++componentIndex)
     {
-        const update_component_definition_t &definition = updateComponentDefinitions[componentIndex];
-        if (definition.initWebserverEndpointsHandler)
+        UpdateHandlingComponentBase* component = this->getComponentAt(componentIndex);
+        if (component)
         {
-            definition.initWebserverEndpointsHandler(p_server);
+            component->initWebserverEndpoints(p_server);
         }
     }
 }
@@ -387,13 +434,14 @@ bool UpdateHandling::startFetchingNewestVersionInfos()
 
 /**********************************************************************/
 
-bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler)
+bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler, UpdateHandlingComponentBase* componentDef)
 {
     update_task_t task;
     task.component = component;
     task.componentInstanceIndex = instanceIndex;
     task.step = step;
     task.handler = handler;
+    task.componentDef = componentDef;
     return updateTaskQueue.push(task);
 }
 
@@ -401,15 +449,16 @@ bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int ins
 void UpdateHandling::enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
 {
     bool found = false;
-    for(size_t i = 0; i < updateComponentDefinitionCount; i++)
+    for(size_t i = 0; i < this->getComponentCount(); i++)
     {
-        if(updateComponentDefinitions[i].component == component)
+        UpdateHandlingComponentBase* componentDef = this->getComponentAt(i);
+        if(componentDef == nullptr || componentDef->component != component)
         {
-            const update_component_definition_t &definition = updateComponentDefinitions[i];
-            definition.enqueueHandler(componentInstanceIndex);
-            found = true;
-            break;
+            continue;
         }
+        componentDef->enqueueUpdateTasks(componentInstanceIndex);
+        found = true;
+        break;
     }
     if(!found)
     {
@@ -443,10 +492,11 @@ void UpdateHandling::loop()
                 if(result)
                 {
                     Serial.println(F("[Update Handling] Fetching version infos successful:"));
-                    for(size_t i = 0; i < updateComponentDefinitionCount; ++i)
+                    for(size_t i = 0; i < this->getComponentCount(); ++i)
                     {
-                        if(updateComponentDefinitions[i].updateInfo == nullptr) { continue; }
-                        update_info_t &info = *updateComponentDefinitions[i].updateInfo;
+                        UpdateHandlingComponentBase* component = this->getComponentAt(i);
+                        if(component == nullptr || component->p_updateInfo == nullptr) { continue; }
+                        update_info_t &info = *component->p_updateInfo;
                         Serial.printf_P(PSTR("Component: %s\n"), info.componentName.c_str());
                         Serial.printf_P(PSTR("  Valid: %s\n"), info.valid ? "true" : "false");
                         Serial.printf_P(PSTR("  Version: %s\n"), info.version.c_str());
