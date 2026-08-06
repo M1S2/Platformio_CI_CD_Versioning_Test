@@ -22,11 +22,6 @@
 				<h2>Update Übersicht</h2>
 				<div class="update-card-content">
 					<div class="update-info-column">
-						<div class="loader-button-wrapper">
-								<span class="loader" id="loader-btn-check-update" style="display: none;"></span>
-								<button class="icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
-						</div>
-
 						<div>
 							<div class="update-status">-</div>
 							<progress id="update_progress" max="100"></progress>
@@ -40,6 +35,10 @@
 								<option value="stable">Stable (Produktion)</option>
 								<option value="dev">Dev (Entwicklung)</option>
 							</select>
+							<div class="loader-button-wrapper" style="margin-left: 20px;">
+								<span class="loader" id="loader-btn-check-update" style="display: none;"></span>
+								<button class="icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
+							</div>
 						</div>
 					</div>
 

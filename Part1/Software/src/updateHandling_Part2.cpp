@@ -13,21 +13,21 @@
 
 #define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
 
-UpdateHandlingPart2::UpdateHandlingPart2() : UpdateHandlingComponentBase(UPDATE_COMPONENT_PART2, "part2")
+UpdateHandlingPart2::UpdateHandlingPart2() : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_PART2)
 {
 }
 
 bool UpdateHandlingPart2::enqueueUpdateTasks(int componentInstanceIndex)
 {
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, UpdateHandlingPart2::performUpdateTask_PREPARE, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, UpdateHandlingPart2::performUpdateTask_PREPARE, this))
     {
         return false;
     }
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, UpdateHandlingPart2::performUpdateTask_WAIT, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, UpdateHandlingPart2::performUpdateTask_WAIT, this))
     {
         return false;
     }
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENT_PART2, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart2::performUpdateTask_FW, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart2::performUpdateTask_FW, this))
     {
         return false;
     }

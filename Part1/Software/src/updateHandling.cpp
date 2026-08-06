@@ -87,19 +87,17 @@ UpdateHandlingComponentBase* UpdateHandling::getComponentAt(size_t index) const
     return (index < this->updateComponentCount) ? this->updateComponents[index] : nullptr;
 }
 
-/**********************************************************************/
-
-UpdateComponents UpdateHandling::findComponentByName(const String& componentName) const
+UpdateHandlingComponentBase* UpdateHandling::getComponentByName(String componentName)
 {
-    for (size_t componentIndex = 0; componentIndex < this->getComponentCount(); ++componentIndex)
+    for(size_t i = 0; i < this->getComponentCount(); i++)
     {
-        const UpdateHandlingComponentBase* component = this->getComponentAt(componentIndex);
-        if(component && component->componentName == componentName)
+        UpdateHandlingComponentBase* componentDef = this->getComponentAt(i);
+        if(componentDef != nullptr && componentDef->componentName == componentName)
         {
-            return component->component;
+            return componentDef;
         }
     }
-    return UPDATE_COMPONENT_NONE;
+    return nullptr;
 }
 
 /**********************************************************************/
@@ -159,7 +157,6 @@ bool UpdateHandling::fetchVersions()
         if(component == nullptr) { continue; }
         update_info_t &info = component->updateInfo;
         const String componentName = component->componentName;
-        info.componentName = componentName;
         info.valid = false;
         info.version = "";
         info.url_fw = "";
@@ -221,7 +218,7 @@ void UpdateHandling::prepareStatusDoc(const update_status_t &status, JsonDocumen
 {
     doc["channel"] = status.currentUpdateChannel;
     doc["state"] = status.state;
-    doc["currentComponent"] = status.currentComponent;
+    doc["currentComponentName"] = status.currentComponent ? status.currentComponent->componentName : "";
     doc["currentComponentInstanceIndex"] = status.currentComponentInstanceIndex;
     doc["updateStep"] = status.updateStep;
     doc["updateProgress"] = status.updateProgress;
@@ -299,28 +296,27 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
         startUpdateHandler = new AsyncCallbackJsonWebHandler("/update/start", [this](AsyncWebServerRequest *request, JsonVariant &json)
         {
             JsonObject jsonObj = json.as<JsonObject>();
-            if (!jsonObj.containsKey("component") || !jsonObj.containsKey("componentInstanceIndex"))
+            if (!jsonObj.containsKey("componentName") || !jsonObj.containsKey("componentInstanceIndex"))
             {
-                request->send(400, "text/plain", "Missing 'component' or 'componentInstanceIndex' in JSON body");
+                request->send(400, "text/plain", "Missing 'componentName' or 'componentInstanceIndex' in JSON body");
                 return;
             }
-
-            String componentStr = jsonObj["component"].as<String>();
+            String componentName = jsonObj["componentName"].as<String>();
             int componentInstanceIndex = jsonObj["componentInstanceIndex"].as<int>();
 
             StaticJsonDocument<128> doc;
             int resultCode = 200;
-            UpdateComponents component = this->findComponentByName(componentStr);
-            if (component != UPDATE_COMPONENT_NONE)
+            UpdateHandlingComponentBase* component = this->getComponentByName(componentName);
+            if (component != nullptr)
             {
-                this->enqueueUpdateTasks(component, componentInstanceIndex);
+                this->enqueueUpdateTasks(componentName, componentInstanceIndex);
                 doc["status"] = "ok";
-                doc["message"] = "Update for " + componentStr + " started";
+                doc["message"] = "Update for " + componentName + " started";
             }
             else
             {
                 doc["status"] = "error";
-                doc["message"] = "Invalid component \"" + componentStr + "\"";
+                doc["message"] = "Invalid component \"" + componentName + "\"";
                 resultCode = 400;
             }
 
@@ -357,7 +353,6 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
             size_t instanceCount = componentDef->getInstanceCount();
 
             JsonObject component = componentsArray.createNestedObject();
-            component["id"] = componentDef->component;
             component["name"] = componentDef->componentName;
             component["available"] = info.valid;
             component["has_fs_update"] = info.has_fs_update;
@@ -395,7 +390,7 @@ void UpdateHandling::initWebserverEndpoints(AsyncWebServer* p_server, Session* p
             if (this->updateTaskQueue.getAt(i, task))
             {
                 JsonObject obj = array.createNestedObject();
-                obj["component"] = task.component;
+                obj["componentName"] = task.componentDef->componentName;
                 obj["instance"] = task.componentInstanceIndex;
                 obj["step"] = task.step;
             }
@@ -426,7 +421,7 @@ bool UpdateHandling::startFetchingNewestVersionInfos()
         return false;
     }
     clearVersionInfos();
-    updateStatus.currentComponent = UPDATE_COMPONENT_NONE;
+    updateStatus.currentComponent = nullptr;
     // Set state to fetch the newest version infos in the next loop() iteration, because the HTTP request handling should be as fast as possible and not block for too long (e.g. by waiting for the HTTP response from the update server)
     updateStatus.state = UPDATE_STATE_CHECKING;
     return true;
@@ -434,10 +429,9 @@ bool UpdateHandling::startFetchingNewestVersionInfos()
 
 /**********************************************************************/
 
-bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler, UpdateHandlingComponentBase* componentDef)
+bool UpdateHandling::enqueueSingleUpdateTask(String componentName, int instanceIndex, UpdateSteps step, update_step_handler_t handler, UpdateHandlingComponentBase* componentDef)
 {
     update_task_t task;
-    task.component = component;
     task.componentInstanceIndex = instanceIndex;
     task.step = step;
     task.handler = handler;
@@ -446,26 +440,18 @@ bool UpdateHandling::enqueueSingleUpdateTask(UpdateComponents component, int ins
 }
 
 
-void UpdateHandling::enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex)
+void UpdateHandling::enqueueUpdateTasks(String componentName, int componentInstanceIndex)
 {
-    bool found = false;
-    for(size_t i = 0; i < this->getComponentCount(); i++)
+    UpdateHandlingComponentBase* componentDef = this->getComponentByName(componentName);
+    if(componentDef != nullptr)
     {
-        UpdateHandlingComponentBase* componentDef = this->getComponentAt(i);
-        if(componentDef == nullptr || componentDef->component != component)
-        {
-            continue;
-        }
         componentDef->enqueueUpdateTasks(componentInstanceIndex);
-        found = true;
-        break;
     }
-    if(!found)
+    else
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling] Cannot enqueue update tasks: Component \"%s\" not supported\n"), component);
+            Serial.printf_P(PSTR("[Update Handling] Cannot enqueue update tasks: Component \"%s\" not supported\n"), componentName.c_str());
         #endif
-        return;
     }
 }
 
@@ -524,7 +510,7 @@ void UpdateHandling::loop()
             {
                 updateTaskQueue.pop(currentUpdateTask);
 
-                updateStatus.currentComponent = currentUpdateTask.component;
+                updateStatus.currentComponent = currentUpdateTask.componentDef;
                 updateStatus.currentComponentInstanceIndex = currentUpdateTask.componentInstanceIndex;
                 updateStatus.updateStep = currentUpdateTask.step;
                 if(currentUpdateTask.handler == nullptr)
@@ -537,7 +523,7 @@ void UpdateHandling::loop()
                 else
                 {
                     #ifdef DEBUG_OUTPUT
-                        Serial.printf_P(PSTR("[Update Handling] Performing update task: Component = %d, Instance Index = %d, Step = %d\n"), currentUpdateTask.component, currentUpdateTask.componentInstanceIndex, currentUpdateTask.step);
+                        Serial.printf_P(PSTR("[Update Handling] Performing update task: Component = %s, Instance Index = %d, Step = %d\n"), currentUpdateTask.componentName.c_str(), currentUpdateTask.componentInstanceIndex, currentUpdateTask.step);
                     #endif
                     bool result = currentUpdateTask.handler(currentUpdateTask);
                     if(!result)
@@ -557,7 +543,7 @@ void UpdateHandling::loop()
         case UPDATE_STATE_ERROR:
         {
             updateTaskQueue.clear();
-            updateStatus.currentComponent = UPDATE_COMPONENT_NONE;
+            updateStatus.currentComponent = nullptr;
             updateStatus.currentComponentInstanceIndex = -1;
             updateStatus.updateStep = UPDATE_STEP_NONE;
             updateStatus.updateProgress = 0.0f;

@@ -4,13 +4,6 @@ const UpdateChannels =
 	DEV: 1
 };
 
-const UpdateComponents =
-{
-    UPDATE_COMPONENT_NONE: 0,
-    UPDATE_COMPONENT_PART1: 1,
-    UPDATE_COMPONENT_PART2: 2
-};
-
 const UpdateStates =
 {
 	IDLE: 0,
@@ -210,17 +203,6 @@ async function updatePerformRestore()
 
 /**********************************************************************/
 
-function updateComponentToString(component)
-{
-    switch (component)
-	{
-        case UpdateComponents.UPDATE_COMPONENT_NONE:  return '-';
-        case UpdateComponents.UPDATE_COMPONENT_PART1: return 'Part 1';
-        case UpdateComponents.UPDATE_COMPONENT_PART2: return 'Part 2';
-        default: return '?';
-    }
-}
-
 function updateStepToString(step)
 {
     switch (step)
@@ -376,7 +358,7 @@ function displayUpdateInfos(updateInfo)
 			const columnTitle = columnClone.querySelector('.update-column-title');
 			const cardsContainer = columnClone.querySelector('.update-component-instance-card-container');
 
-			if (columnTitle) columnTitle.textContent = updateComponentToString(component.id);
+			if (columnTitle) columnTitle.textContent = component.name;
 
 			// Create a card for each current version
 			component.currentVersions.forEach((currentVersion, versionIndex) =>
@@ -389,23 +371,23 @@ function displayUpdateInfos(updateInfo)
 
 				if (currentVersionElement)
 				{
-					currentVersionElement.id = `update-component-instance-current-version_${component.id}_${versionIndex}`;
+					currentVersionElement.id = `update-component-instance-current-version_${component.name}_${versionIndex}`;
 					currentVersionElement.textContent = currentVersion;
 				}
 
 				if (availableVersionElement)
 				{
-					availableVersionElement.id = `update-component-instance-available-version_${component.id}_${versionIndex}`;
+					availableVersionElement.id = `update-component-instance-available-version_${component.name}_${versionIndex}`;
 					availableVersionElement.textContent = component.available ? (component.version || '-') : '?';
 				}
 
 				if (buttonStartUpdate)
 				{
-					buttonStartUpdate.id = `btn-update-start_${component.id}_${versionIndex}`;
+					buttonStartUpdate.id = `btn-update-start_${component.name}_${versionIndex}`;
 					buttonStartUpdate.onclick = () => startUpdate(component.name, versionIndex);
 				}
 
-				if (loaderBtnStartUpdate) loaderBtnStartUpdate.id = `loader-btn-update-start_${component.id}_${versionIndex}`;
+				if (loaderBtnStartUpdate) loaderBtnStartUpdate.id = `loader-btn-update-start_${component.name}_${versionIndex}`;
 
 				cardsContainer.appendChild(cardClone);
 			});
@@ -430,7 +412,7 @@ function displayUpdateStatus(updateStatus)
 		updateChannelSelect.value = (updateStatus.channel === UpdateChannels.DEV) ? 'dev' : 'stable';
 	}
 
-	const componentText = updateComponentToString(updateStatus.currentComponent);
+	const componentText = updateStatus.currentComponentName;
 	let statusText = 'Unknown';
 	let statusIcon = 'circle';
 	let isChecking = false;
@@ -519,8 +501,8 @@ function displayUpdateStatus(updateStatus)
 	{
 		// Check, if this loader is part of the current component
 		const isCurrentActiveLoader = isUpdating &&
-									  updateStatus.currentComponent &&
-									  loader.id.startsWith(`loader-btn-update-start_${updateStatus.currentComponent}_${updateStatus.currentComponentInstanceIndex}`);
+									  updateStatus.currentComponentName &&
+									  loader.id.startsWith(`loader-btn-update-start_${updateStatus.currentComponentName}_${updateStatus.currentComponentInstanceIndex}`);
 		loader.style.display = isCurrentActiveLoader ? 'inline-block' : 'none';
 	});
 
@@ -545,12 +527,12 @@ function displayUpdateTaskList(updateTaskList)
     const groupedTasks = {};
     updateTaskList.forEach(task =>
     {
-        const key = `${task.component}_${task.instance}`;
+        const key = `${task.componentName}_${task.instance}`;
         if(!groupedTasks[key])
         {
             groupedTasks[key] =
             {
-                component: task.component,
+                componentName: task.componentName,
                 instance: task.instance,
                 steps: []
             };
@@ -565,7 +547,7 @@ function displayUpdateTaskList(updateTaskList)
 
         const header = document.createElement("div");
         header.className = "update-task-group-header";
-		header.textContent = group.instance >= 0 ? `${updateComponentToString(group.component)} #${group.instance}` : updateComponentToString(group.component);
+		header.textContent = group.instance >= 0 ? `${group.componentName} #${group.instance}` : group.componentName;
 		groupDiv.appendChild(header);
 
         group.steps.forEach(step =>
@@ -628,7 +610,7 @@ async function startUpdate(componentName, componentInstanceIndex)
 			},
 			body: JSON.stringify(
 			{
-				component: componentName,
+				componentName: componentName,
 				componentInstanceIndex: componentInstanceIndex
 			})
 		});

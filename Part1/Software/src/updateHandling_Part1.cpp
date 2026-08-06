@@ -13,7 +13,7 @@
 // Static member initialization
 unsigned long UpdateHandlingPart1::backupRestoreTimeoutMs = 0;
 
-UpdateHandlingPart1::UpdateHandlingPart1(unsigned long backupRestoreTimeoutMs, const char** filesForBackup, size_t filesForBackupCount) : UpdateHandlingComponentBase(UPDATE_COMPONENT_PART1, "part1")
+UpdateHandlingPart1::UpdateHandlingPart1(unsigned long backupRestoreTimeoutMs, const char** filesForBackup, size_t filesForBackupCount) : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_PART1)
 {
     UpdateHandlingPart1::backupRestoreTimeoutMs = backupRestoreTimeoutMs;
     this->filesForBackup = filesForBackup;
@@ -27,25 +27,25 @@ bool UpdateHandlingPart1::enqueueUpdateTasks(int componentInstanceIndex)
         fsBackupConfirmed = false;
         fsRestoreConfirmed = false;
 
-        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_BACKUP, UpdateHandlingPart1::performUpdateTask_BACKUP, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_BACKUP, UpdateHandlingPart1::performUpdateTask_BACKUP, this))
         {
             return false;
         }
-        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_FS, UpdateHandlingPart1::performUpdateTask_FS, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_FS, UpdateHandlingPart1::performUpdateTask_FS, this))
         {
             return false;
         }
-        if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_RESTORE, UpdateHandlingPart1::performUpdateTask_RESTORE, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_RESTORE, UpdateHandlingPart1::performUpdateTask_RESTORE, this))
         {
             return false;
         }
     }
 
-    if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart1::performUpdateTask_FW, this))
+    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart1::performUpdateTask_FW, this))
     {
         return false;
     }
-    if (!p_updateHandling->enqueueSingleUpdateTask(component, componentInstanceIndex, UPDATE_STEP_RESTART, UpdateHandlingPart1::performUpdateTask_RESTART, this))
+    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_RESTART, UpdateHandlingPart1::performUpdateTask_RESTART, this))
     {
         return false;
     }

@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "updateHandling.h"
 
+#define UPDATE_COMPONENTNAME_PART1 "part1"  ///< The name of the update component for Part1. This macro defines the string identifier used to represent the Part1 update component in the update handling system.
+
 class UpdateHandlingPart1 : public UpdateHandlingComponentBase
 {
 public:

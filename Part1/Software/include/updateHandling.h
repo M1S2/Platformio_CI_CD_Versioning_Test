@@ -16,14 +16,6 @@ enum UpdateChannels
     UPDATE_CHANNEL_DEV      ///< Development update channel, intended for testing and development purposes.
 };
 
-#warning Change from enum to something else to be more generic
-enum UpdateComponents
-{
-    UPDATE_COMPONENT_NONE,
-    UPDATE_COMPONENT_PART1,
-    UPDATE_COMPONENT_PART2
-};
-
 /// @brief Different states of the update handling process. These states represent the current status of the update handling system, allowing for tracking and managing the update process.
 enum UpdateStates
 {
@@ -51,12 +43,18 @@ enum UpdateSteps
 /*####################################################################*/
 /*####################################################################*/
 
+// Forward declaration of UpdateHandlingComponentBase class, update task struct and typedef (otherwise we would have a circular dependencies)
+class UpdateHandlingComponentBase;
+struct update_task;
+typedef struct update_task update_task_t;
+
+
 /// @brief Struct representing the current status of the update handling system.
 typedef struct update_status
 {
     UpdateChannels currentUpdateChannel = UPDATE_CHANNEL_DEV;       ///< Current update channel (stable or dev)
     UpdateStates state = UPDATE_STATE_IDLE;                         ///< Current state of the update handling
-    UpdateComponents currentComponent = UPDATE_COMPONENT_NONE;      ///< Component currently being updated
+    UpdateHandlingComponentBase* currentComponent = nullptr;        ///< Pointer to the component currently being updated
     int currentComponentInstanceIndex = -1;                         ///< Index of the component instance currently being updated
     UpdateSteps updateStep = UPDATE_STEP_NONE;                      ///< Current step of the update process (firmware update or filesystem update)
     float updateProgress = 0.0f;                                    ///< Progress of the current or last firmware and filesystem update (0.0 to 100.0)
@@ -65,7 +63,6 @@ typedef struct update_status
 /// @brief Struct representing the update information for a specific component.
 typedef struct update_info
 {
-    String componentName;   ///< Name of the component (e.g. "part1")
     bool valid;             ///< Whether the update info is valid (i.e. whether a valid manifest was fetched and parsed)
     String version;         ///< Firmware version (e.g. "1.0.0" or "dev-SW_v2.0.0-p2-856538c")
     bool has_fs_update;     ///< Whether the update includes a filesystem update (i.e. whether the manifest contains a valid URL for the filesystem binary)
@@ -77,21 +74,15 @@ typedef struct update_info
 
 /**********************************************************************/
 
-// Forward declaration of UpdateHandlingComponentBase class, update task struct and typedef (otherwise we would have a circular dependencies)
-class UpdateHandlingComponentBase;
-struct update_task;
-typedef struct update_task update_task_t;
-
 typedef bool (*update_step_handler_t)(update_task_t &task);
 
 /// @brief Struct representing an update task in the update handling system.
 struct update_task
 {
-    UpdateComponents component = UPDATE_COMPONENT_NONE;     ///< Component targeted by the update task.
+    UpdateHandlingComponentBase* componentDef = nullptr;    ///< Pointer to the component instance that created this update task. This allows the update handling system to associate the task with the specific component that initiated it, enabling proper management and tracking of update tasks for different components.
     int componentInstanceIndex = -1;                        ///< Index of the component instance targeted by the update task.
     UpdateSteps step = UPDATE_STEP_NONE;                    ///< Step of the update process targeted by the update task.
     update_step_handler_t handler = nullptr;                ///< Handler function to perform the update step.
-    UpdateHandlingComponentBase* componentDef = nullptr;    ///< Pointer to the component instance that created this update task. This allows the update handling system to associate the task with the specific component that initiated it, enabling proper management and tracking of update tasks for different components.
 };
 
 /*####################################################################*/
@@ -124,18 +115,18 @@ public:
     bool startFetchingNewestVersionInfos();
 
     /// @brief Enqueues the update tasks for a specific component and its instance index. This function adds the necessary update tasks to the internal queue, allowing the update handling system to process them in the correct order. It ensures that all required steps for updating the specified component are scheduled for execution.
-    /// @param component The update component for which to enqueue tasks.
+    /// @param componentName The name of the update component for which to enqueue tasks.
     /// @param componentInstanceIndex The index of the component instance for which to enqueue tasks.
-    void enqueueUpdateTasks(UpdateComponents component, int componentInstanceIndex);
+    void enqueueUpdateTasks(String componentName, int componentInstanceIndex);
 
     /// @brief Enqueues a single update task for a specific component, instance index, and update step. This function adds the specified update task to the internal queue, allowing the update handling system to process it in the correct order. It ensures that the specified step for updating the component is scheduled for execution.
-    /// @param component The update component for which to enqueue the task.
+    /// @param componentName The name of the update component for which to enqueue the task.
     /// @param instanceIndex The index of the component instance for which to enqueue the task.
     /// @param step The update step to enqueue.
     /// @param handler The handler function for the update step.
     /// @param componentDef Optional pointer to the component instance that created this task.
     /// @return True if the task was enqueued successfully, false otherwise.
-    bool enqueueSingleUpdateTask(UpdateComponents component, int instanceIndex, UpdateSteps step, update_step_handler_t handler, UpdateHandlingComponentBase* componentDef = nullptr);
+    bool enqueueSingleUpdateTask(String componentName, int instanceIndex, UpdateSteps step, update_step_handler_t handler, UpdateHandlingComponentBase* componentDef = nullptr);
 
     /// @brief Registers a new update component with the UpdateHandling system. This function adds the specified UpdateHandlingComponentBase instance to the internal list of registered components, allowing it to participate in the update process. It ensures that the component is properly initialized and ready for update handling.
     /// @param component Pointer to the UpdateHandlingComponentBase instance to register.
@@ -150,6 +141,11 @@ public:
     /// @param index The index of the component to retrieve.
     /// @return A pointer to the registered update component at the specified index, or nullptr if the index is invalid.
     UpdateHandlingComponentBase* getComponentAt(size_t index) const;
+
+    /// @brief Get the registered update component by its name. This function searches for the UpdateHandlingComponentBase instance with the specified component name and returns a pointer to it.
+    /// @param componentName The name of the component to retrieve.
+    /// @return A pointer to the registered update component with the specified name, or nullptr if no such component is found.
+    UpdateHandlingComponentBase* getComponentByName(String componentName);
 
 
     update_status_t updateStatus;   ///< The current update status structure. This member variable holds the state, component, step, and progress information for the update handling system, allowing clients to query the current status of updates.
@@ -172,11 +168,6 @@ private:
     /// @return True if the document was prepared successfully, false otherwise.
     void prepareStatusDoc(const update_status_t &status, JsonDocument &doc);
 
-    /// @brief Finds the update component corresponding to the specified component name. This function searches through the registered update components and returns the matching component type if found. It allows clients to query the update handling system for specific components based on their names.
-    /// @param componentName The name of the component to find.
-    /// @return The type of the found component, or UPDATE_COMPONENT_NONE if not found.
-    UpdateComponents findComponentByName(const String& componentName) const;
-
     GenericQueue<update_task_t, UPDATE_QUEUE_SIZE> updateTaskQueue; ///< The queue that holds the update tasks to be processed. This member variable is used to manage the sequence of update tasks for different components and steps, allowing the update handling system to process them in an organized manner.
     update_task_t currentUpdateTask;                                ///< The current update task being processed. This member variable holds the details of the update task that is currently being executed by the update handling system.
     const char* stableBaseUrl;                                      ///< The base URL for the stable update channel, where the manifest and update files for stable releases are hosted.
@@ -193,11 +184,10 @@ private:
 class UpdateHandlingComponentBase
 {
 public:
-    /// @brief Constructor for the UpdateHandlingComponentBase class. Initializes the component with the specified component type and name, and sets the update info and handling pointers to nullptr.
-    /// @param comp The type of the update component.
+    /// @brief Constructor for the UpdateHandlingComponentBase class. Initializes the component with the specified component name, and sets the update info and handling pointers to nullptr.
     /// @param name The name of the update component.
-    UpdateHandlingComponentBase(UpdateComponents comp = UPDATE_COMPONENT_NONE, const String &name = "") :
-        component(comp), componentName(name), p_updateHandling(nullptr) {}
+    UpdateHandlingComponentBase(const String &name = "") :
+        componentName(name), p_updateHandling(nullptr) {}
 
     /// @brief Virtual destructor for the UpdateHandlingComponentBase class. Ensures proper cleanup of derived classes.
     virtual ~UpdateHandlingComponentBase() {}
@@ -223,8 +213,7 @@ public:
     // =================================================
     // Metadata / storage
 
-    UpdateComponents component;         ///< The type of the update component. This member variable is used to identify the specific type of the component and is set during the construction of the derived class.
-    String componentName;               ///<  The name of the update component. This member variable is used to provide a human-readable identifier for the component and is set during the construction of the derived class.
+    String componentName;               ///< The name of the update component. This member variable is used to provide a human-readable identifier for the component and is set during the construction of the derived class.
     update_info_t updateInfo;           ///< Pointer to the update information structure for this component. This member variable is used to store and access the update-related information (such as version, URLs, and MD5 hashes) for this component. It should be initialized by the derived class to point to the appropriate update_info_t instance.
     UpdateHandling* p_updateHandling;   ///< Pointer to the UpdateHandling instance that manages this component. This member variable allows the component to access shared update handling functionality and state. It should be initialized by the derived class to point to the appropriate UpdateHandling instance.
 };
