@@ -1,35 +1,35 @@
 #include <ESP8266WiFi.h>
-#include "part2ActionHub.h"
+#include "remoteActionHub.h"
 #include "wifiHandling.h"
 #include "config.h"
 
-bool part2ActionHub_isAPOpen = false;
-String part2ActionHub_ApSsid;
-Part2ActionHubAction part2ActionHub_currentAction = PART2ACTIONHUB_ACTION_NONE;
+bool remoteActionHub_isAPOpen = false;
+String remoteActionHub_ApSsid;
+RemoteActionHubAction remoteActionHub_currentAction = REMOTEACTIONHUB_ACTION_NONE;
 
-unsigned long part2ActionHub_APStartedAt = 0;
+unsigned long remoteActionHub_APStartedAt = 0;
 
 
-void part2ActionHub_initWebserverEndpoints()
+void remoteActionHub_initWebserverEndpoints()
 {
     server.on("/actionHub/current_action", HTTP_GET, [](AsyncWebServerRequest *request)
     {
-        if(!part2ActionHub_isAPOpen)
+        if(!remoteActionHub_isAPOpen)
         {
             request->send(404, "text/plain", "Action hub not open");
             return;
         }
-        request->send(200, "text/plain", String(part2ActionHub_currentAction).c_str());
+        request->send(200, "text/plain", String(remoteActionHub_currentAction).c_str());
     });
 }
 
 /**********************************************************************/
 
-bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
+bool remoteActionHub_startAP(RemoteActionHubAction currentAction)
 {
-    part2ActionHub_currentAction = currentAction;
+    remoteActionHub_currentAction = currentAction;
 
-    if (part2ActionHub_isAPOpen)
+    if (remoteActionHub_isAPOpen)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[ActionHub AP] AP is already active."));
@@ -37,7 +37,7 @@ bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
         return true;
     }
 
-    part2ActionHub_ApSsid = PART2ACTIONHUB_AP_NAME_BASE + String(ESP.getChipId(), HEX);
+    remoteActionHub_ApSsid = REMOTEACTIONHUB_AP_NAME_BASE + String(ESP.getChipId(), HEX);
 
     #ifdef DEBUG_OUTPUT
         Serial.println();
@@ -48,13 +48,13 @@ bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
     WiFi.mode(WIFI_AP_STA);
 
     bool apStarted = false;
-    if (PART2ACTIONHUB_AP_PW == nullptr || strlen(PART2ACTIONHUB_AP_PW) == 0)
+    if (REMOTEACTIONHUB_AP_PW == nullptr || strlen(REMOTEACTIONHUB_AP_PW) == 0)
     {
-        apStarted = WiFi.softAP(part2ActionHub_ApSsid.c_str());
+        apStarted = WiFi.softAP(remoteActionHub_ApSsid.c_str());
     }
     else
     {
-        apStarted = WiFi.softAP(part2ActionHub_ApSsid.c_str(), PART2ACTIONHUB_AP_PW);
+        apStarted = WiFi.softAP(remoteActionHub_ApSsid.c_str(), REMOTEACTIONHUB_AP_PW);
     }
 
     if (!apStarted)
@@ -65,14 +65,14 @@ bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
         return false;
     }
 
-    part2ActionHub_isAPOpen = true;
-    part2ActionHub_APStartedAt = millis();
+    remoteActionHub_isAPOpen = true;
+    remoteActionHub_APStartedAt = millis();
 
     #ifdef DEBUG_OUTPUT
         delay(100);    // delay a bit to ensure that the AP is fully started before printing the info
         Serial.println(F("[ActionHub AP] SoftAP successfully started."));
         Serial.print(F("[ActionHub AP] SSID: "));
-        Serial.println(part2ActionHub_ApSsid);
+        Serial.println(remoteActionHub_ApSsid);
 
         Serial.print(F("[ActionHub AP] AP IP: "));
         Serial.println(WiFi.softAPIP());
@@ -95,11 +95,11 @@ bool part2ActionHub_startAP(Part2ActionHubAction currentAction)
 
 /**********************************************************************/
 
-bool part2ActionHub_stopAP()
+bool remoteActionHub_stopAP()
 {
-    part2ActionHub_currentAction = PART2ACTIONHUB_ACTION_NONE;
+    remoteActionHub_currentAction = REMOTEACTIONHUB_ACTION_NONE;
 
-    if (!part2ActionHub_isAPOpen)
+    if (!remoteActionHub_isAPOpen)
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[ActionHub AP] AP isn't active."));
@@ -123,8 +123,8 @@ bool part2ActionHub_stopAP()
     // Make sure, AP is disabled. Caution: Encryption is only possible in WIFI_STA mode.
     WiFi.mode(WIFI_STA);
 
-    part2ActionHub_isAPOpen = false;
-    part2ActionHub_APStartedAt = 0;
+    remoteActionHub_isAPOpen = false;
+    remoteActionHub_APStartedAt = 0;
 
     #ifdef DEBUG_OUTPUT
         Serial.println(F("[ActionHub AP] SoftAP stopped."));
@@ -135,14 +135,14 @@ bool part2ActionHub_stopAP()
 
 /**********************************************************************/
 
-bool part2ActionHub_handleAPTimeout()
+bool remoteActionHub_handleAPTimeout()
 {
-    if (part2ActionHub_isAPOpen && PART2ACTIONHUB_AP_TIMEOUT_MS > 0 && (millis() - part2ActionHub_APStartedAt >= PART2ACTIONHUB_AP_TIMEOUT_MS))
+    if (remoteActionHub_isAPOpen && REMOTEACTIONHUB_AP_TIMEOUT_MS > 0 && (millis() - remoteActionHub_APStartedAt >= REMOTEACTIONHUB_AP_TIMEOUT_MS))
     {
         #ifdef DEBUG_OUTPUT
             Serial.println(F("[ActionHub AP] Timeout reached, AP is automatically stopped."));
         #endif
-        part2ActionHub_stopAP();
+        remoteActionHub_stopAP();
         return true;    // return true if AP was stopped due to timeout
     }
     return false;

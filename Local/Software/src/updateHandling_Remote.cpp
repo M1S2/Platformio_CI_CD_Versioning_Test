@@ -5,42 +5,42 @@
 #include <LittleFS.h>
 #include <MD5Builder.h>
 #include "updateHandling.h"
-#include "updateHandling_Part2.h"
-#include "part2ActionHub.h"
+#include "updateHandling_Remote.h"
+#include "remoteActionHub.h"
 #include "config.h"
 
 /**********************************************************************/
 
-#define LITTLEFS_PART2_FW_PATH "/fw/part2_fw.bin"
+#define LITTLEFS_REMOTE_FW_PATH "/fw/remote_fw.bin"
 
-UpdateHandlingPart2::UpdateHandlingPart2() : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_PART2)
+UpdateHandlingRemote::UpdateHandlingRemote() : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_REMOTE)
 {
 }
 
-bool UpdateHandlingPart2::enqueueUpdateTasks(int componentInstanceIndex)
+bool UpdateHandlingRemote::enqueueUpdateTasks(int componentInstanceIndex)
 {
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_PREPARE, UpdateHandlingPart2::performUpdateTask_PREPARE, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_REMOTE, componentInstanceIndex, UPDATE_STEP_PREPARE, UpdateHandlingRemote::performUpdateTask_PREPARE, this))
     {
         return false;
     }
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_WAIT, UpdateHandlingPart2::performUpdateTask_WAIT, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_REMOTE, componentInstanceIndex, UPDATE_STEP_WAIT, UpdateHandlingRemote::performUpdateTask_WAIT, this))
     {
         return false;
     }
-    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART2, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart2::performUpdateTask_FW, this))
+    if(!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_REMOTE, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingRemote::performUpdateTask_FW, this))
     {
         return false;
     }
     return true;
 }
 
-size_t UpdateHandlingPart2::getInstanceCount()
+size_t UpdateHandlingRemote::getInstanceCount()
 {
-    #warning At the moment there are two instances of Part2. Make this variable.
+    #warning At the moment there are two instances of Remote. Make this variable.
     return 2;
 }
 
-char* UpdateHandlingPart2::queryVersion(int componentInstanceIndex)
+char* UpdateHandlingRemote::queryVersion(int componentInstanceIndex)
 {
     switch (componentInstanceIndex)
     {
@@ -51,28 +51,28 @@ char* UpdateHandlingPart2::queryVersion(int componentInstanceIndex)
     return "?"; // Default case, should not be reached
 }
 
-void UpdateHandlingPart2::initWebserverEndpoints(AsyncWebServer* p_server)
+void UpdateHandlingRemote::initWebserverEndpoints(AsyncWebServer* p_server)
 {
-    p_server->on("/update/part2_fw.bin", HTTP_GET, [this](AsyncWebServerRequest *request)
+    p_server->on("/update/remote_fw.bin", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
-        if(!part2ActionHub_isAPOpen)
+        if(!remoteActionHub_isAPOpen)
         {
             request->send(404, "text/plain", "Action hub not open");
             return;
         }
         connectionEstablished = true;
-        if(!LittleFS.exists(LITTLEFS_PART2_FW_PATH))
+        if(!LittleFS.exists(LITTLEFS_REMOTE_FW_PATH))
         {
             request->send(404, "text/plain", "File not found");
             return;
         }
         p_updateHandling->updateStatus.updateStep = UPDATE_STEP_FW;
-        request->send(LittleFS, LITTLEFS_PART2_FW_PATH, "application/octet-stream");
+        request->send(LittleFS, LITTLEFS_REMOTE_FW_PATH, "application/octet-stream");
     });
     
     /*--------------------------------------------------------------------*/
 
-    p_server->on("/update/part2_fw_md5", HTTP_GET, [this](AsyncWebServerRequest *request)
+    p_server->on("/update/remote_fw_md5", HTTP_GET, [this](AsyncWebServerRequest *request)
     {
         connectionEstablished = true;
         if(!updateInfo.valid)
@@ -85,7 +85,7 @@ void UpdateHandlingPart2::initWebserverEndpoints(AsyncWebServer* p_server)
     
     /*--------------------------------------------------------------------*/
     
-    p_server->on("/update/part2_report", HTTP_POST, [this](AsyncWebServerRequest *request)
+    p_server->on("/update/remote_report", HTTP_POST, [this](AsyncWebServerRequest *request)
     {
         if (request->hasParam("progress", true))
         {
@@ -103,12 +103,12 @@ void UpdateHandlingPart2::initWebserverEndpoints(AsyncWebServer* p_server)
 /**********************************************************************/
 
 // Calculate the MD5 hash of a file in the LittleFS
-String UpdateHandlingPart2::calculateFileMD5(const String &filePath, UpdateHandling* p_updateHandling)
+String UpdateHandlingRemote::calculateFileMD5(const String &filePath, UpdateHandling* p_updateHandling)
 {
     File file = LittleFS.open(filePath, "r");
     if (!file)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to open file %s for MD5 calculation\n"), filePath.c_str());
+        p_updateHandling->log(PSTR("[Update Handling Remote] Failed to open file %s for MD5 calculation\n"), filePath.c_str());
         return "";
     }
 
@@ -122,11 +122,11 @@ String UpdateHandlingPart2::calculateFileMD5(const String &filePath, UpdateHandl
 
 /**********************************************************************/
 
-bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5, update_task_t& updateTask)
+bool UpdateHandlingRemote::downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5, update_task_t& updateTask)
 {
     UpdateHandling* p_updateHandling = updateTask.componentDef->p_updateHandling;
  
-    p_updateHandling->log(PSTR("[Update Handling Part2] Downloading file..."));
+    p_updateHandling->log(PSTR("[Update Handling Remote] Downloading file..."));
 
     // Check, if the file already exists and the MD5 hash matches
     if (LittleFS.exists(filePath))
@@ -134,12 +134,12 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
         String currentMd5 = calculateFileMD5(filePath, p_updateHandling);
         if (currentMd5 == expectedMd5)
         {
-            p_updateHandling->log(PSTR("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n"), filePath.c_str());
+            p_updateHandling->log(PSTR("[Update Handling Remote] File %s already exists and MD5 matches. Skipping download.\n"), filePath.c_str());
             return true;
         }
         else
         {
-            p_updateHandling->log(PSTR("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n"), filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
+            p_updateHandling->log(PSTR("[Update Handling Remote] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n"), filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
             LittleFS.remove(filePath); // Remove old file
         }
     }
@@ -155,7 +155,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     http.setReuse(false);
     if (!http.begin(clientSecure, url))
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] http.begin failed"));
+        p_updateHandling->log(PSTR("[Update Handling Remote] http.begin failed"));
         http.end();
         return false;
     }
@@ -163,7 +163,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
+        p_updateHandling->log(PSTR("[Update Handling Remote] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
         http.end();
         return false;
     }
@@ -171,7 +171,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     File file = LittleFS.open(filePath, "w");
     if (!file)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to open file"));
+        p_updateHandling->log(PSTR("[Update Handling Remote] Failed to open file"));
         http.end();
         return false;
     }
@@ -180,12 +180,12 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     WiFiClient *stream = http.getStreamPtr();
     if (stream == nullptr)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to get stream pointer"));
+        p_updateHandling->log(PSTR("[Update Handling Remote] Failed to get stream pointer"));
         file.close();
         http.end();
         return false;
     }
-    p_updateHandling->log(PSTR("[Update Handling Part2] Stream successfully opened, %d bytes to download\n"), contentLength);
+    p_updateHandling->log(PSTR("[Update Handling Remote] Stream successfully opened, %d bytes to download\n"), contentLength);
 
     // Use stack buffer to avoid heap fragmentation during SSL download
     const size_t bufferSize = 512;
@@ -218,7 +218,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
             {
                 lastLoggedPercent = currentPercentInt;
                 p_updateHandling->updateStatus.updateProgress = percent;
-                p_updateHandling->log(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
+                p_updateHandling->log(PSTR("[Update Handling Remote] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
             }
         }
         yield();
@@ -230,7 +230,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     // Check if the download was actually complete
     if (contentLength > 0 && totalWritten < (uint32_t)contentLength)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n"), totalWritten, contentLength);
+        p_updateHandling->log(PSTR("[Update Handling Remote] Download failed: Interrupted at %u of %d bytes\n"), totalWritten, contentLength);
         return false;
     }
 
@@ -238,60 +238,60 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     String downloadedMd5 = calculateFileMD5(filePath, p_updateHandling);
     if (downloadedMd5 != expectedMd5)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n"), expectedMd5.c_str(), downloadedMd5.c_str());
+        p_updateHandling->log(PSTR("[Update Handling Remote] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n"), expectedMd5.c_str(), downloadedMd5.c_str());
         LittleFS.remove(filePath); // Defect file -> delete it
         return false;
     }
 
-    p_updateHandling->log(PSTR("[Update Handling Part2] Download finished and MD5 verified.\n"));
+    p_updateHandling->log(PSTR("[Update Handling Remote] Download finished and MD5 verified.\n"));
     return true;
 }
 
 /**********************************************************************/
 
-bool UpdateHandlingPart2::performUpdateTask_PREPARE(update_task_t& updateTask)
+bool UpdateHandlingRemote::performUpdateTask_PREPARE(update_task_t& updateTask)
 {
     UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
     UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
 
     if (!p_componentDef->updateInfo.valid)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part2] No valid update info available"));
+        p_updateHandling->log(PSTR("[Update Handling Remote] No valid update info available"));
         return false;
     }
-    return downloadFileToLittleFS(p_componentDef->updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, p_componentDef->updateInfo.fw_md5, updateTask);
+    return downloadFileToLittleFS(p_componentDef->updateInfo.url_fw, LITTLEFS_REMOTE_FW_PATH, p_componentDef->updateInfo.fw_md5, updateTask);
 }
 
 /**********************************************************************/
 
-bool UpdateHandlingPart2::performUpdateTask_WAIT(update_task_t& updateTask)
+bool UpdateHandlingRemote::performUpdateTask_WAIT(update_task_t& updateTask)
 {
-    UpdateHandlingPart2* p_componentPart2 = (UpdateHandlingPart2*)updateTask.componentDef;
+    UpdateHandlingRemote* p_component = (UpdateHandlingRemote*)updateTask.componentDef;
     
-    p_componentPart2->connectionEstablished = false;
-    p_componentPart2->fwUpdateFinished = false;
-    if(!part2ActionHub_startAP(PART2ACTIONHUB_ACTION_UPDATE)) { return false; }
+    p_component->connectionEstablished = false;
+    p_component->fwUpdateFinished = false;
+    if(!remoteActionHub_startAP(REMOTEACTIONHUB_ACTION_UPDATE)) { return false; }
 
-    while(!p_componentPart2->connectionEstablished)
+    while(!p_component->connectionEstablished)
     {
-        if(part2ActionHub_handleAPTimeout())
+        if(remoteActionHub_handleAPTimeout())
         {
             // The action hub was closed by timeout.
             break;
         }
         yield();
     }
-    return p_componentPart2->connectionEstablished;
+    return p_component->connectionEstablished;
 }
 
 /**********************************************************************/
 
-bool UpdateHandlingPart2::performUpdateTask_FW(update_task_t& updateTask)
+bool UpdateHandlingRemote::performUpdateTask_FW(update_task_t& updateTask)
 {
-    UpdateHandlingPart2* p_componentPart2 = (UpdateHandlingPart2*)updateTask.componentDef;
-    while(!p_componentPart2->fwUpdateFinished)
+    UpdateHandlingRemote* p_component = (UpdateHandlingRemote*)updateTask.componentDef;
+    while(!p_component->fwUpdateFinished)
     {
-        if(part2ActionHub_handleAPTimeout())
+        if(remoteActionHub_handleAPTimeout())
         {
             // The action hub was closed by timeout.
             break;
@@ -299,11 +299,11 @@ bool UpdateHandlingPart2::performUpdateTask_FW(update_task_t& updateTask)
         yield();
     }
 
-    part2ActionHub_stopAP();
+    remoteActionHub_stopAP();
     // Cleanup downloaded file
-    if(LittleFS.exists(LITTLEFS_PART2_FW_PATH))
+    if(LittleFS.exists(LITTLEFS_REMOTE_FW_PATH))
     {
-        LittleFS.remove(LITTLEFS_PART2_FW_PATH);
+        LittleFS.remove(LITTLEFS_REMOTE_FW_PATH);
     }
-    return p_componentPart2->fwUpdateFinished;
+    return p_component->fwUpdateFinished;
 }

@@ -8,7 +8,7 @@
 #include "wifiHandling.h"
 #include "timeHandling.h"
 #include "version.h"
-#include "part2ActionHub.h"
+#include "remoteActionHub.h"
 
 void writeLog(PGM_P formatP, va_list args)
 {
@@ -23,10 +23,10 @@ void writeLog(PGM_P formatP, va_list args)
 #endif
 }
 
-const char* filesForPart1Backup[] = UPDATE_BACKUP_FILES_ARRAY;
+const char* filesForLocalBackup[] = UPDATE_BACKUP_FILES_ARRAY;
 UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME, writeLog);
-UpdateHandlingPart1 updateHandlingPart1(UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS, filesForPart1Backup, sizeof(filesForPart1Backup) / sizeof(filesForPart1Backup[0]));
-UpdateHandlingPart2 updateHandlingPart2;
+UpdateHandlingLocal updateHandlingLocal(UPDATE_LOCALBACKUPRESTORE_TIMEOUT_MS, filesForLocalBackup, sizeof(filesForLocalBackup) / sizeof(filesForLocalBackup[0]));
+UpdateHandlingRemote updateHandlingRemote;
 
 void main_initWebserverEndpoints()
 {
@@ -164,8 +164,8 @@ void setup()
     timeHandling_printNowSerial();
 
     // Register the available update components
-    updateHandling.registerComponent(&updateHandlingPart1);
-    updateHandling.registerComponent(&updateHandlingPart2);
+    updateHandling.registerComponent(&updateHandlingLocal);
+    updateHandling.registerComponent(&updateHandlingRemote);
 
     digitalWrite(LED_BUILTIN, LOW);            // Turn on LED
 }
@@ -185,5 +185,5 @@ void loop()
             Serial.println(F("[Main Loop] Time is not valid yet, skipping updateHandling_loop()"));
         #endif
     }
-    part2ActionHub_handleAPTimeout();
+    remoteActionHub_handleAPTimeout();
 }

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "version.h"
 #include "config.h"
-#include "part2ActionHub.h"
+#include "remoteActionHub.h"
 
 bool isLedOn;
 void setLedState(bool on)
@@ -39,6 +39,6 @@ void loop()
 
     if(cnt == 10)
     {
-        part2ActionHub_runAction();
+        remoteActionHub_runAction();
     }
 }

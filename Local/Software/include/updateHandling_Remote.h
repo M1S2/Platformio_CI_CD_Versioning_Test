@@ -1,15 +1,15 @@
-#ifndef UPDATE_HANDLING_PART2_H
-#define UPDATE_HANDLING_PART2_H
+#ifndef UPDATE_HANDLING_REMOTE_H
+#define UPDATE_HANDLING_REMOTE_H
 
 #include <Arduino.h>
 #include "updateHandling.h"
 
-#define UPDATE_COMPONENTNAME_PART2 "part2"  ///< The name of the update component for Part2. This macro defines the string identifier used to represent the Part2 update component in the update handling system.
+#define UPDATE_COMPONENTNAME_REMOTE "remote"  ///< The name of the update component for Remote part.
 
-class UpdateHandlingPart2 : public UpdateHandlingComponentBase
+class UpdateHandlingRemote : public UpdateHandlingComponentBase
 {
 public:
-    UpdateHandlingPart2();
+    UpdateHandlingRemote();
 
     bool enqueueUpdateTasks(int componentInstanceIndex = -1) override;
     size_t getInstanceCount() override;

@@ -2,21 +2,21 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
-#include "part2ActionHub.h"
+#include "remoteActionHub.h"
 #include "updateHandling.h"
 #include "config.h"
 
-String part2ActionHub_findAP()
+String remoteActionHub_findAP()
 {
     #ifdef DEBUG_OUTPUT
-        Serial.println("[Part2 ActionHub] Scan for AP...");
+        Serial.println("[Remote ActionHub] Scan for AP...");
     #endif
 
     int networkCount = WiFi.scanNetworks();
     if (networkCount <= 0)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Part2 ActionHub] No WiFi networks found.");
+            Serial.println("[Remote ActionHub] No WiFi networks found.");
         #endif
         return "";
     }
@@ -30,7 +30,7 @@ String part2ActionHub_findAP()
 
         #ifdef DEBUG_OUTPUT
             uint8_t channel = WiFi.channel(i);
-            Serial.print("[Part2 ActionHub] Found: ");
+            Serial.print("[Remote ActionHub] Found: ");
             Serial.print(ssid);
             Serial.print(" | RSSI: ");
             Serial.print(rssi);
@@ -38,7 +38,7 @@ String part2ActionHub_findAP()
             Serial.println(channel);
         #endif
 
-        if (ssid.startsWith(PART2ACTIONHUB_AP_NAME_BASE))
+        if (ssid.startsWith(REMOTEACTIONHUB_AP_NAME_BASE))
         {
             if (rssi > bestRssi)
             {
@@ -51,12 +51,12 @@ String part2ActionHub_findAP()
     #ifdef DEBUG_OUTPUT
         if (bestMatch.length() > 0)
         {
-            Serial.print("[Part2 ActionHub] AP choosen: ");
+            Serial.print("[Remote ActionHub] AP choosen: ");
             Serial.println(bestMatch);
         }
         else
         {
-            Serial.println("[Part2 ActionHub] No matching AP found.");
+            Serial.println("[Remote ActionHub] No matching AP found.");
         }
     #endif
     return bestMatch;
@@ -64,24 +64,24 @@ String part2ActionHub_findAP()
 
 /**********************************************************************/
 
-bool part2ActionHub_connectToAP(const String& ssid)
+bool remoteActionHub_connectToAP(const String& ssid)
 {
     #ifdef DEBUG_OUTPUT
-        Serial.print("[Part2 ActionHub] Connect with AP: ");
+        Serial.print("[Remote ActionHub] Connect with AP: ");
         Serial.println(ssid);
     #endif
 
-    if (PART2ACTIONHUB_AP_PW == nullptr || strlen(PART2ACTIONHUB_AP_PW) == 0)
+    if (REMOTEACTIONHUB_AP_PW == nullptr || strlen(REMOTEACTIONHUB_AP_PW) == 0)
     {
         WiFi.begin(ssid.c_str());
     }
     else
     {
-        WiFi.begin(ssid.c_str(), PART2ACTIONHUB_AP_PW);
+        WiFi.begin(ssid.c_str(), REMOTEACTIONHUB_AP_PW);
     }
 
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < PART2ACTIONHUB_CONNECT_TIMEOUT_MS)
+    while (WiFi.status() != WL_CONNECTED && millis() - start < REMOTEACTIONHUB_CONNECT_TIMEOUT_MS)
     {
         delay(250);
         #ifdef DEBUG_OUTPUT
@@ -96,42 +96,42 @@ bool part2ActionHub_connectToAP(const String& ssid)
     if (WiFi.status() == WL_CONNECTED)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Part2 ActionHub] Connected with AP.");
-            Serial.print("[Part2 ActionHub] My IP: ");
+            Serial.println("[Remote ActionHub] Connected with AP.");
+            Serial.print("[Remote ActionHub] My IP: ");
             Serial.println(WiFi.localIP());
-            Serial.print("[Part2 ActionHub] Gateway IP: ");
+            Serial.print("[Remote ActionHub] Gateway IP: ");
             Serial.println(WiFi.gatewayIP());
         #endif
         return true;
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.println("[Part2 ActionHub] Paring with AP failed.");
+        Serial.println("[Remote ActionHub] Paring with AP failed.");
     #endif
     return false;
 }
 
 /**********************************************************************/
 
-bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
+bool remoteActionHub_getRequestedAction(RemoteActionHubAction& action)
 {
     WiFiClient client;
     HTTPClient http;
 
     IPAddress gatewayIp = WiFi.gatewayIP();
-    String actionUrl = "http://" + gatewayIp.toString() + PART2ACTIONHUB_CURRENT_ACTION_ENDPOINT;
+    String actionUrl = "http://" + gatewayIp.toString() + REMOTEACTIONHUB_CURRENT_ACTION_ENDPOINT;
 
     #ifdef DEBUG_OUTPUT
-        Serial.print("[Part2 ActionHub] Gateway IP: ");
+        Serial.print("[Remote ActionHub] Gateway IP: ");
         Serial.println(gatewayIp.toString());
-        Serial.print("[Part2 ActionHub] Fetching action from: ");
+        Serial.print("[Remote ActionHub] Fetching action from: ");
         Serial.println(actionUrl);
     #endif
 
     if (!http.begin(client, actionUrl))
     {
         #ifdef DEBUG_OUTPUT
-            Serial.println("[Part2 ActionHub] HTTP begin() failed.");
+            Serial.println("[Remote ActionHub] HTTP begin() failed.");
         #endif
         return false;
     }
@@ -144,7 +144,7 @@ bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
     if (httpCode <= 0)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.print("[Part2 ActionHub] HTTP Error: ");
+            Serial.print("[Remote ActionHub] HTTP Error: ");
             Serial.println(http.errorToString(httpCode));
         #endif
         http.end();
@@ -152,13 +152,13 @@ bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
     }
 
     #ifdef DEBUG_OUTPUT 
-        Serial.print("[Part2 ActionHub] HTTP Status: ");
+        Serial.print("[Remote ActionHub] HTTP Status: ");
         Serial.println(httpCode);
     #endif
     if (httpCode != HTTP_CODE_OK)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Part2 ActionHub] Unexpected HTTP Status: %d\n", httpCode);
+            Serial.printf("[Remote ActionHub] Unexpected HTTP Status: %d\n", httpCode);
         #endif
         http.end();
         return false;
@@ -167,20 +167,20 @@ bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
     String payload = http.getString();
     payload.trim();
     int receivedVal = payload.toInt();  // toInt() returns 0, if failed. This will lead to action NONE (this is ok here).    
-    if (receivedVal < PART2ACTIONHUB_ACTION_NONE || receivedVal > PART2ACTIONHUB_ACTION_UPDATE)
+    if (receivedVal < REMOTEACTIONHUB_ACTION_NONE || receivedVal > REMOTEACTIONHUB_ACTION_UPDATE)
     {
         #ifdef DEBUG_OUTPUT
-            Serial.printf("[Part2 ActionHub] Action out of range: %d\n", receivedVal);
+            Serial.printf("[Remote ActionHub] Action out of range: %d\n", receivedVal);
         #endif
-        action = PART2ACTIONHUB_ACTION_NONE;
+        action = REMOTEACTIONHUB_ACTION_NONE;
     }
     else
     {
-        action = static_cast<Part2ActionHubAction>(receivedVal);
+        action = static_cast<RemoteActionHubAction>(receivedVal);
     }
 
     #ifdef DEBUG_OUTPUT
-        Serial.print("[Part2 ActionHub] Action received: ");
+        Serial.print("[Remote ActionHub] Action received: ");
         Serial.println((int)action);
     #endif
 
@@ -190,24 +190,24 @@ bool part2ActionHub_getRequestedAction(Part2ActionHubAction& action)
 
 /**********************************************************************/
 
-bool part2ActionHub_runAction()
+bool remoteActionHub_runAction()
 {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     delay(100);
 
-    String actionHubSsid = part2ActionHub_findAP();
+    String actionHubSsid = remoteActionHub_findAP();
     if (actionHubSsid.length() == 0)
     {
         return false;
     }
-    if (!part2ActionHub_connectToAP(actionHubSsid))
+    if (!remoteActionHub_connectToAP(actionHubSsid))
     {
         return false;
     }
     
-    Part2ActionHubAction requestedAction = PART2ACTIONHUB_ACTION_NONE;
-    if (!part2ActionHub_getRequestedAction(requestedAction))
+    RemoteActionHubAction requestedAction = REMOTEACTIONHUB_ACTION_NONE;
+    if (!remoteActionHub_getRequestedAction(requestedAction))
     {
         return false;
     }
@@ -215,7 +215,7 @@ bool part2ActionHub_runAction()
     bool result = true;
     switch (requestedAction)
     {
-        case PART2ACTIONHUB_ACTION_UPDATE:
+        case REMOTEACTIONHUB_ACTION_UPDATE:
             result = updateHandling_performUpdate();
             break;
         default: break;

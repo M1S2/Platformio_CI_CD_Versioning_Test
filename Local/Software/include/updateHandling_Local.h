@@ -1,15 +1,15 @@
-#ifndef UPDATE_HANDLING_PART1_H
-#define UPDATE_HANDLING_PART1_H
+#ifndef UPDATE_HANDLING_LOCAL_H
+#define UPDATE_HANDLING_LOCAL_H
 
 #include <Arduino.h>
 #include "updateHandling.h"
 
-#define UPDATE_COMPONENTNAME_PART1 "part1"  ///< The name of the update component for Part1. This macro defines the string identifier used to represent the Part1 update component in the update handling system.
+#define UPDATE_COMPONENTNAME_LOCAL "local"  ///< The name of the update component for local part.
 
-class UpdateHandlingPart1 : public UpdateHandlingComponentBase
+class UpdateHandlingLocal : public UpdateHandlingComponentBase
 {
 public:
-    UpdateHandlingPart1(unsigned long backupRestoreTimeoutMs = 60000, const char** filesForBackup = nullptr, size_t filesForBackupCount = 0);
+    UpdateHandlingLocal(unsigned long backupRestoreTimeoutMs = 60000, const char** filesForBackup = nullptr, size_t filesForBackupCount = 0);
 
     bool enqueueUpdateTasks(int componentInstanceIndex = -1) override;
     size_t getInstanceCount() override;

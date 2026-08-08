@@ -19,15 +19,15 @@
 #define UPDATE_DEVBASEURL                       "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/"
 #define UPDATE_MANIFESTFILENAME                 "manifest.json"
 
-#define UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS    60000                               // Timeout in ms for the part1 backup/restore process. Use 0 to disable the timeout and keep the process active until it is manually stopped.
+#define UPDATE_LOCALBACKUPRESTORE_TIMEOUT_MS    60000                               // Timeout in ms for the local backup/restore process. Use 0 to disable the timeout and keep the process active until it is manually stopped.
 #define UPDATE_BACKUP_FILES_ARRAY               { "testfile.txt", "data*.bin" }     // List of files/patterns to include in the backup. Supports both fixed paths ("/config.bin") and wildcard patterns ("/dataSensor*.bin").
 
 /**********************************************************************/
-/* PART2 ACTION HUB CONFIGURATION */
+/* REMOTE ACTION HUB CONFIGURATION */
 
-#define PART2ACTIONHUB_AP_NAME_BASE    "TestActionHub-"     // Base name for the part2 action hub access point (it is appended by the chip id to make it unique)
-#define PART2ACTIONHUB_AP_PW           "Act1onHub#PW"       // Password for the part2 action hub access point
-#define PART2ACTIONHUB_AP_TIMEOUT_MS   120000               // Timeout in ms for the part2 action hub access point. Use 0 to disable the timeout and keep the AP active until it is manually stopped.
+#define REMOTEACTIONHUB_AP_NAME_BASE    "TestActionHub-"     // Base name for the remote action hub access point (it is appended by the chip id to make it unique)
+#define REMOTEACTIONHUB_AP_PW           "Act1onHub#PW"       // Password for the remote action hub access point
+#define REMOTEACTIONHUB_AP_TIMEOUT_MS   120000               // Timeout in ms for the remote action hub access point. Use 0 to disable the timeout and keep the AP active until it is manually stopped.
 
 /**********************************************************************/
 

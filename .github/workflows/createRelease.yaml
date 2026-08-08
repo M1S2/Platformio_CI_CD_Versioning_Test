@@ -25,8 +25,8 @@ jobs:
 
       - name: Patch version into code
         run: |
-          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Part1/Software/include/version.h
-          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Part2/Software/include/version.h
+          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Local/Software/include/version.h
+          sed -i "s/@VERSION@/${{ steps.version.outputs.version }}/" Remote/Software/include/version.h
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,44 +36,44 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
-      - name: Build Part1
-        working-directory: Part1/Software
+      - name: Build Local
+        working-directory: Local/Software
         run: pio run
 
-      - name: Build LittleFS image of Part1
-        working-directory: Part1/Software
+      - name: Build LittleFS image of Local
+        working-directory: Local/Software
         run: pio run --target buildfs
 
-      - name: Build Part2
-        working-directory: Part2/Software
+      - name: Build Remote
+        working-directory: Remote/Software
         run: pio run
 
       - name: Rename binaries
         run: |
-          cp Part1/Software/.pio/build/esp12e/firmware.bin part1_fw_${{ steps.version.outputs.version }}.bin
-          cp Part1/Software/.pio/build/esp12e/littlefs.bin part1_fs_${{ steps.version.outputs.version }}.bin
-          cp Part2/Software/.pio/build/esp12e/firmware.bin part2_fw_${{ steps.version.outputs.version }}.bin
+          cp Local/Software/.pio/build/esp12e/firmware.bin local_fw_${{ steps.version.outputs.version }}.bin
+          cp Local/Software/.pio/build/esp12e/littlefs.bin local_fs_${{ steps.version.outputs.version }}.bin
+          cp Remote/Software/.pio/build/esp12e/firmware.bin remote_fw_${{ steps.version.outputs.version }}.bin
 
       - name: Generate MD5 checksums
         run: |
-          PART1_FW_MD5=$(md5sum part1_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
-          PART1_FS_MD5=$(md5sum part1_fs_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
-          PART2_FW_MD5=$(md5sum part2_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
-          echo "PART1_FW_MD5=$PART1_FW_MD5" >> $GITHUB_ENV
-          echo "PART1_FS_MD5=$PART1_FS_MD5" >> $GITHUB_ENV
-          echo "PART2_FW_MD5=$PART2_FW_MD5" >> $GITHUB_ENV
+          LOCAL_FW_MD5=$(md5sum local_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          LOCAL_FS_MD5=$(md5sum local_fs_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          REMOTE_FW_MD5=$(md5sum remote_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          echo "LOCAL_FW_MD5=$LOCAL_FW_MD5" >> $GITHUB_ENV
+          echo "LOCAL_FS_MD5=$LOCAL_FS_MD5" >> $GITHUB_ENV
+          echo "REMOTE_FW_MD5=$REMOTE_FW_MD5" >> $GITHUB_ENV
 
       - name: Create manifest
         run: |
           cat <<EOF > manifest.json
           {
             "version": "${{ steps.version.outputs.version }}",
-            "part1_fw": "part1_fw_${{ steps.version.outputs.version }}.bin",
-            "part1_fs": "part1_fs_${{ steps.version.outputs.version }}.bin",
-            "part1_fw_md5": "${PART1_FW_MD5}",
-            "part1_fs_md5": "${PART1_FS_MD5}",
-            "part2_fw": "part2_fw_${{ steps.version.outputs.version }}.bin",
-            "part2_fw_md5": "${PART2_FW_MD5}"
+            "local_fw": "local_fw_${{ steps.version.outputs.version }}.bin",
+            "local_fs": "local_fs_${{ steps.version.outputs.version }}.bin",
+            "local_fw_md5": "${LOCAL_FW_MD5}",
+            "local_fs_md5": "${LOCAL_FS_MD5}",
+            "remote_fw": "remote_fw_${{ steps.version.outputs.version }}.bin",
+            "remote_fw_md5": "${REMOTE_FW_MD5}"
           }
           EOF
 
@@ -84,6 +84,6 @@ jobs:
           name: "Firmware ${{ steps.version.outputs.version }}"
           files: |
             manifest.json
-            part1_fw_${{ steps.version.outputs.version }}.bin
-            part1_fs_${{ steps.version.outputs.version }}.bin
-            part2_fw_${{ steps.version.outputs.version }}.bin
+            local_fw_${{ steps.version.outputs.version }}.bin
+            local_fs_${{ steps.version.outputs.version }}.bin
+            remote_fw_${{ steps.version.outputs.version }}.bin

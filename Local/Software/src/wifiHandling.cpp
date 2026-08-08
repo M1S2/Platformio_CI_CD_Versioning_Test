@@ -5,7 +5,7 @@
 #include "config.h"
 #include "main.h"
 #include "updateHandling.h"
-#include "part2ActionHub.h"
+#include "remoteActionHub.h"
 #include "certs.h"
 
 AsyncWebServer server(80);
@@ -96,7 +96,7 @@ void wifiHandling_onConnected()
         wifiHandling_initWebserverFiles();
         main_initWebserverEndpoints();
         updateHandling.initWebserverEndpoints(&server, &session, &certList);
-        part2ActionHub_initWebserverEndpoints();
+        remoteActionHub_initWebserverEndpoints();
         server.begin();
         webserverStarted = true;
     }

@@ -9,23 +9,23 @@
 Stable Manifest Format:
 {
   "version": "3.0.0",
-  "part1_fw": "part1_fw_3.0.0.bin",
-  "part1_fs": "part1_fs_3.0.0.bin",
-  "part1_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698",
-  "part2_fw": "part2_fw.bin",
-  "part2_fw_md5": "50bff09cec367445d75cee900608b86d"
+  "local_fw": "local_fw_3.0.0.bin",
+  "local_fs": "local_fs_3.0.0.bin",
+  "local_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
+  "local_fs_md5": "0b37d70272041137295d7dc4ca508698",
+  "remote_fw": "remote_fw_3.0.0.bin",
+  "remote_fw_md5": "50bff09cec367445d75cee900608b86d"
 }
 
 Dev Manifest Format:
 {
   "version": "dev-SW_v3.0.0-p3-9853261",
-  "part1_fw": "part1_fw.bin",
-  "part1_fs": "part1_fs.bin",
-  "part1_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "part1_fs_md5": "0b37d70272041137295d7dc4ca508698",
-  "part2_fw": "part2_fw.bin",
-  "part2_fw_md5": "50bff09cec367445d75cee900608b86d"
+  "local_fw": "local_fw.bin",
+  "local_fs": "local_fs.bin",
+  "local_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
+  "local_fs_md5": "0b37d70272041137295d7dc4ca508698",
+  "remote_fw": "remote_fw.bin",
+  "remote_fw_md5": "50bff09cec367445d75cee900608b86d"
 }
 */
 

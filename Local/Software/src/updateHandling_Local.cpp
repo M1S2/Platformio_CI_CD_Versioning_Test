@@ -4,65 +4,65 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include "updateHandling.h"
-#include "updateHandling_Part1.h"
+#include "updateHandling_Local.h"
 #include "version.h"
 #include "config.h"
 
 /**********************************************************************/
 
 // Static member initialization
-unsigned long UpdateHandlingPart1::backupRestoreTimeoutMs = 0;
+unsigned long UpdateHandlingLocal::backupRestoreTimeoutMs = 0;
 
-UpdateHandlingPart1::UpdateHandlingPart1(unsigned long backupRestoreTimeoutMs, const char** filesForBackup, size_t filesForBackupCount) : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_PART1)
+UpdateHandlingLocal::UpdateHandlingLocal(unsigned long backupRestoreTimeoutMs, const char** filesForBackup, size_t filesForBackupCount) : UpdateHandlingComponentBase(UPDATE_COMPONENTNAME_LOCAL)
 {
-    UpdateHandlingPart1::backupRestoreTimeoutMs = backupRestoreTimeoutMs;
+    UpdateHandlingLocal::backupRestoreTimeoutMs = backupRestoreTimeoutMs;
     this->filesForBackup = filesForBackup;
     this->filesForBackupCount = filesForBackupCount;
 }
 
-bool UpdateHandlingPart1::enqueueUpdateTasks(int componentInstanceIndex)
+bool UpdateHandlingLocal::enqueueUpdateTasks(int componentInstanceIndex)
 {
     if (updateInfo.valid && updateInfo.has_fs_update)
     {
         fsBackupConfirmed = false;
         fsRestoreConfirmed = false;
 
-        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_BACKUP, UpdateHandlingPart1::performUpdateTask_BACKUP, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_LOCAL, componentInstanceIndex, UPDATE_STEP_BACKUP, UpdateHandlingLocal::performUpdateTask_BACKUP, this))
         {
             return false;
         }
-        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_FS, UpdateHandlingPart1::performUpdateTask_FS, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_LOCAL, componentInstanceIndex, UPDATE_STEP_FS, UpdateHandlingLocal::performUpdateTask_FS, this))
         {
             return false;
         }
-        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_RESTORE, UpdateHandlingPart1::performUpdateTask_RESTORE, this))
+        if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_LOCAL, componentInstanceIndex, UPDATE_STEP_RESTORE, UpdateHandlingLocal::performUpdateTask_RESTORE, this))
         {
             return false;
         }
     }
 
-    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingPart1::performUpdateTask_FW, this))
+    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_LOCAL, componentInstanceIndex, UPDATE_STEP_FW, UpdateHandlingLocal::performUpdateTask_FW, this))
     {
         return false;
     }
-    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_PART1, componentInstanceIndex, UPDATE_STEP_RESTART, UpdateHandlingPart1::performUpdateTask_RESTART, this))
+    if (!p_updateHandling->enqueueSingleUpdateTask(UPDATE_COMPONENTNAME_LOCAL, componentInstanceIndex, UPDATE_STEP_RESTART, UpdateHandlingLocal::performUpdateTask_RESTART, this))
     {
         return false;
     }
     return true;
 }
 
-size_t UpdateHandlingPart1::getInstanceCount()
+size_t UpdateHandlingLocal::getInstanceCount()
 {
     return 1;
 }
 
-char* UpdateHandlingPart1::queryVersion(int componentInstanceIndex)
+char* UpdateHandlingLocal::queryVersion(int componentInstanceIndex)
 {
     return FW_VERSION;
 }
 
-void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
+void UpdateHandlingLocal::initWebserverEndpoints(AsyncWebServer* p_server)
 {
     // Filesystem backup/restore endpoints (used by the web UI to download/upload files)
     p_server->on("/fs/backup_file_list", HTTP_GET, [this](AsyncWebServerRequest *request)
@@ -82,7 +82,7 @@ void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
                 Dir dir = LittleFS.openDir("/");
                 while (dir.next())
                 {
-                    p_updateHandling->log(PSTR("[Update Handling Part1] Checking file '%s' against pattern '%s'\n"), dir.fileName().c_str(), pattern);
+                    p_updateHandling->log(PSTR("[Update Handling Local] Checking file '%s' against pattern '%s'\n"), dir.fileName().c_str(), pattern);
                     String fileName = dir.fileName();
                     // Remove leading slash for matching
                     const char* fileNamePtr = fileName.c_str();
@@ -90,7 +90,7 @@ void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
                     
                     if (filenameMatchesPattern(fileNamePtr, pattern))
                     {
-                        p_updateHandling->log(PSTR("[Update Handling Part1] Found file '%s'\n"), fileNamePtr);
+                        p_updateHandling->log(PSTR("[Update Handling Local] Found file '%s'\n"), fileNamePtr);
                         // Create a safe copy into the JsonDocument by passing a String
                         arr.add(String(fileNamePtr));
                     }
@@ -161,7 +161,7 @@ void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
 /**********************************************************************/
 
 // Helper function: Check if filename matches a pattern (supports * wildcard)
-bool UpdateHandlingPart1::filenameMatchesPattern(const char* filename, const char* pattern)
+bool UpdateHandlingLocal::filenameMatchesPattern(const char* filename, const char* pattern)
 {
     while (*pattern)
     {
@@ -196,17 +196,17 @@ bool UpdateHandlingPart1::filenameMatchesPattern(const char* filename, const cha
 
 /**********************************************************************/
 
-bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
+bool UpdateHandlingLocal::performUpdateTask_FS(update_task_t& updateTask)
 {
     UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
     UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
 
     if (!p_componentDef->updateInfo.valid || !p_componentDef->updateInfo.has_fs_update)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part1] No valid update info available or no filesystem update included in the update"));
+        p_updateHandling->log(PSTR("[Update Handling Local] No valid update info available or no filesystem update included in the update"));
         return false;
     }
-    p_updateHandling->log(PSTR("[Update Handling Part1] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
+    p_updateHandling->log(PSTR("[Update Handling Local] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
@@ -233,7 +233,7 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
         }
         lastLoggedPercent = currentPercentInt;
 
-        p_updateHandling->log(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
+        p_updateHandling->log(PSTR("[Update Handling Local] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
@@ -244,20 +244,20 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
     clientSecure.setBufferSizes(16384, 512);
 
     bool fsUpdateResult = true;
-    p_updateHandling->log(PSTR("[Update Handling Part1] Update file system..."));
+    p_updateHandling->log(PSTR("[Update Handling Local] Update file system..."));
     ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fs_md5);
     ESPhttpUpdate.rebootOnUpdate(false); // prevent automatic reboot so we can restore files afterwards
     t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, p_componentDef->updateInfo.url_fs);
     switch (returnFsUpdate)
     {
         case HTTP_UPDATE_FAILED:
-            p_updateHandling->log(PSTR("[Update Handling Part1] FS Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
+            p_updateHandling->log(PSTR("[Update Handling Local] FS Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
             break;
         case HTTP_UPDATE_NO_UPDATES:
-            p_updateHandling->log(PSTR("[Update Handling Part1] No FS update available"));
+            p_updateHandling->log(PSTR("[Update Handling Local] No FS update available"));
             break;
         case HTTP_UPDATE_OK:
-            p_updateHandling->log(PSTR("[Update Handling Part1] FS Update ok"));
+            p_updateHandling->log(PSTR("[Update Handling Local] FS Update ok"));
             break;
     }
     fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
@@ -266,14 +266,14 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
+bool UpdateHandlingLocal::performUpdateTask_FW(update_task_t& updateTask)
 {
     UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
     UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
 
     if (!p_componentDef->updateInfo.valid)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part1] No valid update info available"));
+        p_updateHandling->log(PSTR("[Update Handling Local] No valid update info available"));
         return false;
     }
     
@@ -302,7 +302,7 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
         }
         lastLoggedPercent = currentPercentInt;
 
-        p_updateHandling->log(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
+        p_updateHandling->log(PSTR("[Update Handling Local] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
@@ -313,20 +313,20 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
     clientSecure.setBufferSizes(16384, 512);
 
     bool fwUpdateResult = true;
-    p_updateHandling->log(PSTR("[Update Handling Part1] Update firmware..."));
+    p_updateHandling->log(PSTR("[Update Handling Local] Update firmware..."));
     ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fw_md5);
     ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
     t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(clientSecure, p_componentDef->updateInfo.url_fw);
     switch (returnFwUpdate)
     {
         case HTTP_UPDATE_FAILED:
-            p_updateHandling->log(PSTR("[Update Handling Part1] Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
+            p_updateHandling->log(PSTR("[Update Handling Local] Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
             break;
         case HTTP_UPDATE_NO_UPDATES:
-            p_updateHandling->log(PSTR("[Update Handling Part1] No update available"));
+            p_updateHandling->log(PSTR("[Update Handling Local] No update available"));
             break;
         case HTTP_UPDATE_OK:
-            p_updateHandling->log(PSTR("[Update Handling Part1] Update ok"));
+            p_updateHandling->log(PSTR("[Update Handling Local] Update ok"));
             break;
     }
     fwUpdateResult = (returnFwUpdate == HTTP_UPDATE_OK);
@@ -335,7 +335,7 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool UpdateHandlingPart1::performUpdateTask_RESTART(update_task_t& updateTask)
+bool UpdateHandlingLocal::performUpdateTask_RESTART(update_task_t& updateTask)
 {
     UpdateHandling* p_updateHandling = updateTask.componentDef->p_updateHandling;
     
@@ -354,27 +354,27 @@ bool UpdateHandlingPart1::performUpdateTask_RESTART(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
+bool UpdateHandlingLocal::performUpdateTask_BACKUP(update_task_t& updateTask)
 {
-    UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
-    UpdateHandling* p_updateHandling = p_componentPart1->p_updateHandling;
+    UpdateHandlingLocal* p_component = (UpdateHandlingLocal*)updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_component->p_updateHandling;
     
     // If there is no FS update, nothing to backup
-    if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
+    if (!p_component->updateInfo.valid || !p_component->updateInfo.has_fs_update)
     {
         return true;
     }
 
     // Wait for confirmation
     unsigned long start = millis();
-    while (!p_componentPart1->fsBackupConfirmed && (UpdateHandlingPart1::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingPart1::backupRestoreTimeoutMs))
+    while (!p_component->fsBackupConfirmed && (UpdateHandlingLocal::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingLocal::backupRestoreTimeoutMs))
     {
         yield();
     }
 
-    if (!p_componentPart1->fsBackupConfirmed)
+    if (!p_component->fsBackupConfirmed)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part1] FS backup confirmation timed out"));
+        p_updateHandling->log(PSTR("[Update Handling Local] FS backup confirmation timed out"));
         return false;
     }
     return true;
@@ -382,27 +382,27 @@ bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
 
 /**********************************************************************/
 
-bool UpdateHandlingPart1::performUpdateTask_RESTORE(update_task_t& updateTask)
+bool UpdateHandlingLocal::performUpdateTask_RESTORE(update_task_t& updateTask)
 {
-    UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
-    UpdateHandling* p_updateHandling = p_componentPart1->p_updateHandling;
+    UpdateHandlingLocal* p_component = (UpdateHandlingLocal*)updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_component->p_updateHandling;
 
     // If there is no FS update, nothing to restore
-    if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
+    if (!p_component->updateInfo.valid || !p_component->updateInfo.has_fs_update)
     {
         return true;
     }
 
     // Wait for confirmation
     unsigned long start = millis();
-    while (!p_componentPart1->fsRestoreConfirmed && (UpdateHandlingPart1::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingPart1::backupRestoreTimeoutMs))
+    while (!p_component->fsRestoreConfirmed && (UpdateHandlingLocal::backupRestoreTimeoutMs == 0 || (millis() - start) < UpdateHandlingLocal::backupRestoreTimeoutMs))
     {
         yield();
     }
 
-    if (!p_componentPart1->fsRestoreConfirmed)
+    if (!p_component->fsRestoreConfirmed)
     {
-        p_updateHandling->log(PSTR("[Update Handling Part1] FS restore confirmation timed out"));
+        p_updateHandling->log(PSTR("[Update Handling Local] FS restore confirmation timed out"));
         return false;
     }
     return true;
