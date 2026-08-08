@@ -32,11 +32,9 @@ Dev Manifest Format:
 bool requestNewVersionCheck = false;
 bool requestUpdate = false;
 
-UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName)
+UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName, log_function_t logFunction) :
+    logFunction(logFunction), stableBaseUrl(stableBaseUrl), devBaseUrl(devBaseUrl), manifestName(manifestName)
 {
-    this->stableBaseUrl = stableBaseUrl;
-    this->devBaseUrl = devBaseUrl;
-    this->manifestName = manifestName;
 }
 
 /**********************************************************************/
@@ -100,6 +98,17 @@ UpdateHandlingComponentBase* UpdateHandling::getComponentByName(String component
     return nullptr;
 }
 
+void UpdateHandling::log(PGM_P formatP, ...)
+{
+    if (this->logFunction != nullptr)
+    {
+        va_list args;
+        va_start(args, formatP);
+        this->logFunction(formatP, args);
+        va_end(args);
+    }
+}
+
 /**********************************************************************/
 
 bool UpdateHandling::fetchVersions()
@@ -112,9 +121,7 @@ bool UpdateHandling::fetchVersions()
     const char* baseUrl = (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? stableBaseUrl : devBaseUrl;
     String manifestUrl = String(baseUrl) + manifestName;
 
-    #ifdef DEBUG_OUTPUT
-        Serial.printf_P(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
-    #endif
+    log(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
 
     WiFiClientSecure clientSecure;
     clientSecure.setSession(p_wifiSession);
@@ -127,12 +134,10 @@ bool UpdateHandling::fetchVersions()
     http.setReuse(false);
     http.begin(clientSecure, manifestUrl.c_str());
     int httpCode = http.GET();
-    #ifdef DEBUG_OUTPUT
-        if (httpCode <= 0)
-        {
-            Serial.printf_P(PSTR("[Update Handling] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
-        }
-    #endif
+    if (httpCode <= 0)
+    {
+        log(PSTR("[Update Handling] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
+    }
 
     if (httpCode != 200)
     {
@@ -449,9 +454,7 @@ void UpdateHandling::enqueueUpdateTasks(String componentName, int componentInsta
     }
     else
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling] Cannot enqueue update tasks: Component \"%s\" not supported\n"), componentName.c_str());
-        #endif
+        log(PSTR("[Update Handling] Cannot enqueue update tasks: Component \"%s\" not supported\n"), componentName.c_str());
     }
 }
 
@@ -474,33 +477,31 @@ void UpdateHandling::loop()
         {
             bool result = fetchVersions();
 
-            #ifdef DEBUG_OUTPUT
-                if(result)
+            if(result)
+            {
+                log(PSTR("[Update Handling] Fetching version infos successful:"));
+                for(size_t i = 0; i < this->getComponentCount(); ++i)
                 {
-                    Serial.println(F("[Update Handling] Fetching version infos successful:"));
-                    for(size_t i = 0; i < this->getComponentCount(); ++i)
+                    UpdateHandlingComponentBase* component = this->getComponentAt(i);
+                    if(component == nullptr) { continue; }
+                    update_info_t &info = component->updateInfo;
+                    log(PSTR("Component: %s\n"), component->componentName.c_str());
+                    log(PSTR("  Valid: %s\n"), info.valid ? "true" : "false");
+                    log(PSTR("  Version: %s\n"), info.version.c_str());
+                    log(PSTR("  Has FS Update: %s\n"), info.has_fs_update ? "true" : "false");
+                    log(PSTR("  URL FW: %s\n"), info.url_fw.c_str());
+                    log(PSTR("  MD5 FW: %s\n"), info.fw_md5.c_str());
+                    if(info.has_fs_update)
                     {
-                        UpdateHandlingComponentBase* component = this->getComponentAt(i);
-                        if(component == nullptr || component->p_updateInfo == nullptr) { continue; }
-                        update_info_t &info = *component->p_updateInfo;
-                        Serial.printf_P(PSTR("Component: %s\n"), info.componentName.c_str());
-                        Serial.printf_P(PSTR("  Valid: %s\n"), info.valid ? "true" : "false");
-                        Serial.printf_P(PSTR("  Version: %s\n"), info.version.c_str());
-                        Serial.printf_P(PSTR("  Has FS Update: %s\n"), info.has_fs_update ? "true" : "false");
-                        Serial.printf_P(PSTR("  URL FW: %s\n"), info.url_fw.c_str());
-                        Serial.printf_P(PSTR("  MD5 FW: %s\n"), info.fw_md5.c_str());
-                        if(info.has_fs_update)
-                        {
-                            Serial.printf_P(PSTR("  URL FS: %s\n"), info.url_fs.c_str());
-                            Serial.printf_P(PSTR("  MD5 FS: %s\n"), info.fs_md5.c_str());
-                        }
+                        log(PSTR("  URL FS: %s\n"), info.url_fs.c_str());
+                        log(PSTR("  MD5 FS: %s\n"), info.fs_md5.c_str());
                     }
                 }
-                else
-                {
-                    Serial.println(F("[Update Handling] Fetching version infos failed"));
-                }
-            #endif
+            }
+            else
+            {
+                log(PSTR("[Update Handling] Fetching version infos failed"));
+            }
             updateStatus.state = result ? UPDATE_STATE_IDLE : UPDATE_STATE_ERROR;
             break;
         }
@@ -515,16 +516,12 @@ void UpdateHandling::loop()
                 updateStatus.updateStep = currentUpdateTask.step;
                 if(currentUpdateTask.handler == nullptr)
                 {
-                    #ifdef DEBUG_OUTPUT
-                        Serial.println(F("[Update Handling] No handler assigned"));
-                    #endif
+                    log(PSTR("[Update Handling] No handler assigned"));
                     updateStatus.state = UPDATE_STATE_ERROR;
                 }
                 else
                 {
-                    #ifdef DEBUG_OUTPUT
-                        Serial.printf_P(PSTR("[Update Handling] Performing update task: Component = %s, Instance Index = %d, Step = %d\n"), currentUpdateTask.componentName.c_str(), currentUpdateTask.componentInstanceIndex, currentUpdateTask.step);
-                    #endif
+                    log(PSTR("[Update Handling] Performing update task: Component = %s, Instance Index = %d, Step = %d\n"), currentUpdateTask.componentDef->componentName.c_str(), currentUpdateTask.componentInstanceIndex, currentUpdateTask.step);
                     bool result = currentUpdateTask.handler(currentUpdateTask);
                     if(!result)
                     {

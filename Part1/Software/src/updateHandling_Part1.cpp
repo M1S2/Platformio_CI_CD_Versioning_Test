@@ -82,9 +82,7 @@ void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
                 Dir dir = LittleFS.openDir("/");
                 while (dir.next())
                 {
-                    #ifdef DEBUG_OUTPUT
-                        Serial.printf_P(PSTR("[Update Handling Part1] Checking file '%s' against pattern '%s'\n"), dir.fileName().c_str(), pattern);
-                    #endif
+                    p_updateHandling->log(PSTR("[Update Handling Part1] Checking file '%s' against pattern '%s'\n"), dir.fileName().c_str(), pattern);
                     String fileName = dir.fileName();
                     // Remove leading slash for matching
                     const char* fileNamePtr = fileName.c_str();
@@ -92,9 +90,7 @@ void UpdateHandlingPart1::initWebserverEndpoints(AsyncWebServer* p_server)
                     
                     if (filenameMatchesPattern(fileNamePtr, pattern))
                     {
-                        #ifdef DEBUG_OUTPUT
-                            Serial.printf_P(PSTR("[Update Handling Part1] Found file '%s'\n"), fileNamePtr);
-                        #endif
+                        p_updateHandling->log(PSTR("[Update Handling Part1] Found file '%s'\n"), fileNamePtr);
                         // Create a safe copy into the JsonDocument by passing a String
                         arr.add(String(fileNamePtr));
                     }
@@ -207,14 +203,10 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
 
     if (!p_componentDef->updateInfo.valid || !p_componentDef->updateInfo.has_fs_update)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] No valid update info available or no filesystem update included in the update"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] No valid update info available or no filesystem update included in the update"));
         return false;
     }
-    #ifdef DEBUG_OUTPUT
-        Serial.printf_P(PSTR("[Update Handling Part1] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
-    #endif
+    p_updateHandling->log(PSTR("[Update Handling Part1] Free heap before SSL: %u bytes\n"), ESP.getFreeHeap());
 
     ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     ESPhttpUpdate.setClientTimeout(10000);
@@ -241,9 +233,7 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
         }
         lastLoggedPercent = currentPercentInt;
 
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
@@ -254,28 +244,20 @@ bool UpdateHandlingPart1::performUpdateTask_FS(update_task_t& updateTask)
     clientSecure.setBufferSizes(16384, 512);
 
     bool fsUpdateResult = true;
-    #ifdef DEBUG_OUTPUT
-        Serial.println(F("[Update Handling Part1] Update file system..."));
-    #endif
+    p_updateHandling->log(PSTR("[Update Handling Part1] Update file system..."));
     ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fs_md5);
     ESPhttpUpdate.rebootOnUpdate(false); // prevent automatic reboot so we can restore files afterwards
     t_httpUpdate_return returnFsUpdate = ESPhttpUpdate.updateFS(clientSecure, p_componentDef->updateInfo.url_fs);
     switch (returnFsUpdate)
     {
         case HTTP_UPDATE_FAILED:
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling Part1] FS Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] FS Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
             break;
         case HTTP_UPDATE_NO_UPDATES:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println(F("[Update Handling Part1] No FS update available"));
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] No FS update available"));
             break;
         case HTTP_UPDATE_OK:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println(F("[Update Handling Part1] FS Update ok"));
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] FS Update ok"));
             break;
     }
     fsUpdateResult = (returnFsUpdate == HTTP_UPDATE_OK);
@@ -291,9 +273,7 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
 
     if (!p_componentDef->updateInfo.valid)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] No valid update info available"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] No valid update info available"));
         return false;
     }
     
@@ -322,9 +302,7 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
         }
         lastLoggedPercent = currentPercentInt;
 
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] Progress: %d / %d (%.2f%%)\n"), cur, total, percent);
         p_updateHandling->updateStatus.updateProgress = percent;                
         yield(); // Yield to allow other tasks to run (e.g. webserver)
     });
@@ -335,28 +313,20 @@ bool UpdateHandlingPart1::performUpdateTask_FW(update_task_t& updateTask)
     clientSecure.setBufferSizes(16384, 512);
 
     bool fwUpdateResult = true;
-    #ifdef DEBUG_OUTPUT
-        Serial.println(F("[Update Handling Part1] Update firmware..."));
-    #endif
+    p_updateHandling->log(PSTR("[Update Handling Part1] Update firmware..."));
     ESPhttpUpdate.setMD5sum(p_componentDef->updateInfo.fw_md5);
     ESPhttpUpdate.rebootOnUpdate(false);    // Don't reboot automatically after the firmware update.
     t_httpUpdate_return returnFwUpdate = ESPhttpUpdate.update(clientSecure, p_componentDef->updateInfo.url_fw);
     switch (returnFwUpdate)
     {
         case HTTP_UPDATE_FAILED:
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling Part1] Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] Update failed: %s\n"), ESPhttpUpdate.getLastErrorString().c_str());
             break;
         case HTTP_UPDATE_NO_UPDATES:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println(F("[Update Handling Part1] No update available"));
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] No update available"));
             break;
         case HTTP_UPDATE_OK:
-            #ifdef DEBUG_OUTPUT    
-                Serial.println(F("[Update Handling Part1] Update ok"));
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part1] Update ok"));
             break;
     }
     fwUpdateResult = (returnFwUpdate == HTTP_UPDATE_OK);
@@ -387,7 +357,8 @@ bool UpdateHandlingPart1::performUpdateTask_RESTART(update_task_t& updateTask)
 bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
 {
     UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
-
+    UpdateHandling* p_updateHandling = p_componentPart1->p_updateHandling;
+    
     // If there is no FS update, nothing to backup
     if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
     {
@@ -403,9 +374,7 @@ bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
 
     if (!p_componentPart1->fsBackupConfirmed)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] FS backup confirmation timed out"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] FS backup confirmation timed out"));
         return false;
     }
     return true;
@@ -416,6 +385,7 @@ bool UpdateHandlingPart1::performUpdateTask_BACKUP(update_task_t& updateTask)
 bool UpdateHandlingPart1::performUpdateTask_RESTORE(update_task_t& updateTask)
 {
     UpdateHandlingPart1* p_componentPart1 = (UpdateHandlingPart1*)updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_componentPart1->p_updateHandling;
 
     // If there is no FS update, nothing to restore
     if (!p_componentPart1->updateInfo.valid || !p_componentPart1->updateInfo.has_fs_update)
@@ -432,9 +402,7 @@ bool UpdateHandlingPart1::performUpdateTask_RESTORE(update_task_t& updateTask)
 
     if (!p_componentPart1->fsRestoreConfirmed)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part1] FS restore confirmation timed out"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part1] FS restore confirmation timed out"));
         return false;
     }
     return true;

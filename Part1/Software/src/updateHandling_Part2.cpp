@@ -103,14 +103,12 @@ void UpdateHandlingPart2::initWebserverEndpoints(AsyncWebServer* p_server)
 /**********************************************************************/
 
 // Calculate the MD5 hash of a file in the LittleFS
-String calculateFileMD5(const String &filePath)
+String UpdateHandlingPart2::calculateFileMD5(const String &filePath, UpdateHandling* p_updateHandling)
 {
     File file = LittleFS.open(filePath, "r");
     if (!file)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part2] Failed to open file %s for MD5 calculation\n"), filePath.c_str());
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to open file %s for MD5 calculation\n"), filePath.c_str());
         return "";
     }
 
@@ -126,28 +124,22 @@ String calculateFileMD5(const String &filePath)
 
 bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5, update_task_t& updateTask)
 {
-    #ifdef DEBUG_OUTPUT
-        Serial.println(F("[Update Handling Part2] Downloading file..."));
-    #endif
-
     UpdateHandling* p_updateHandling = updateTask.componentDef->p_updateHandling;
+ 
+    p_updateHandling->log(PSTR("[Update Handling Part2] Downloading file..."));
 
     // Check, if the file already exists and the MD5 hash matches
     if (LittleFS.exists(filePath))
     {
-        String currentMd5 = calculateFileMD5(filePath);
+        String currentMd5 = calculateFileMD5(filePath, p_updateHandling);
         if (currentMd5 == expectedMd5)
         {
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n"), filePath.c_str());
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part2] File %s already exists and MD5 matches. Skipping download.\n"), filePath.c_str());
             return true;
         }
         else
         {
-            #ifdef DEBUG_OUTPUT
-                Serial.printf_P(PSTR("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n"), filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
-            #endif
+            p_updateHandling->log(PSTR("[Update Handling Part2] File %s exists but MD5 mismatch (expected: %s, actual: %s). Deleting and re-downloading.\n"), filePath.c_str(), expectedMd5.c_str(), currentMd5.c_str());
             LittleFS.remove(filePath); // Remove old file
         }
     }
@@ -163,9 +155,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     http.setReuse(false);
     if (!http.begin(clientSecure, url))
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part2] http.begin failed"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] http.begin failed"));
         http.end();
         return false;
     }
@@ -173,9 +163,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] HTTP error: Code = %d, Message = %s\n"), httpCode, http.errorToString(httpCode).c_str());
         http.end();
         return false;
     }
@@ -183,9 +171,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     File file = LittleFS.open(filePath, "w");
     if (!file)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part2] Failed to open file"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to open file"));
         http.end();
         return false;
     }
@@ -194,16 +180,12 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     WiFiClient *stream = http.getStreamPtr();
     if (stream == nullptr)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part2] Failed to get stream pointer"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] Failed to get stream pointer"));
         file.close();
         http.end();
         return false;
     }
-    #ifdef DEBUG_OUTPUT
-        Serial.printf_P(PSTR("[Update Handling Part2] Stream successfully opened, %d bytes to download\n"), contentLength);
-    #endif
+    p_updateHandling->log(PSTR("[Update Handling Part2] Stream successfully opened, %d bytes to download\n"), contentLength);
 
     // Use stack buffer to avoid heap fragmentation during SSL download
     const size_t bufferSize = 512;
@@ -236,9 +218,7 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
             {
                 lastLoggedPercent = currentPercentInt;
                 p_updateHandling->updateStatus.updateProgress = percent;
-                #ifdef DEBUG_OUTPUT
-                    Serial.printf_P(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
-                #endif
+                p_updateHandling->log(PSTR("[Update Handling Part2] Downloaded: %u bytes  -> %.2f%%\n"), totalWritten, percent);
             }
         }
         yield();
@@ -250,26 +230,20 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
     // Check if the download was actually complete
     if (contentLength > 0 && totalWritten < (uint32_t)contentLength)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n"), totalWritten, contentLength);
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] Download failed: Interrupted at %u of %d bytes\n"), totalWritten, contentLength);
         return false;
     }
 
     // Check MD5 hash after download
-    String downloadedMd5 = calculateFileMD5(filePath);
+    String downloadedMd5 = calculateFileMD5(filePath, p_updateHandling);
     if (downloadedMd5 != expectedMd5)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.printf_P(PSTR("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n"), expectedMd5.c_str(), downloadedMd5.c_str());
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] Downloaded file MD5 mismatch! Expected: %s, Actual: %s. Deleting file.\n"), expectedMd5.c_str(), downloadedMd5.c_str());
         LittleFS.remove(filePath); // Defect file -> delete it
         return false;
     }
 
-    #ifdef DEBUG_OUTPUT
-        Serial.println(F("[Update Handling Part2] Download finished and MD5 verified."));
-    #endif
+    p_updateHandling->log(PSTR("[Update Handling Part2] Download finished and MD5 verified.\n"));
     return true;
 }
 
@@ -278,12 +252,11 @@ bool UpdateHandlingPart2::downloadFileToLittleFS(const String &url, const String
 bool UpdateHandlingPart2::performUpdateTask_PREPARE(update_task_t& updateTask)
 {
     UpdateHandlingComponentBase* p_componentDef = updateTask.componentDef;
+    UpdateHandling* p_updateHandling = p_componentDef->p_updateHandling;
 
     if (!p_componentDef->updateInfo.valid)
     {
-        #ifdef DEBUG_OUTPUT
-            Serial.println(F("[Update Handling Part2] No valid update info available"));
-        #endif
+        p_updateHandling->log(PSTR("[Update Handling Part2] No valid update info available"));
         return false;
     }
     return downloadFileToLittleFS(p_componentDef->updateInfo.url_fw, LITTLEFS_PART2_FW_PATH, p_componentDef->updateInfo.fw_md5, updateTask);

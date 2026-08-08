@@ -20,6 +20,7 @@ public:
     bool connectionEstablished = false;
 
 private:
+    static String calculateFileMD5(const String &filePath, UpdateHandling* p_updateHandling);
     static bool downloadFileToLittleFS(const String &url, const String &filePath, const String &expectedMd5, update_task_t& updateTask);
 
     static bool performUpdateTask_PREPARE(update_task_t& updateTask);

@@ -10,8 +10,21 @@
 #include "version.h"
 #include "part2ActionHub.h"
 
+void writeLog(PGM_P formatP, va_list args)
+{
+#ifdef DEBUG_OUTPUT
+    char buffer[256];
+    int length = vsnprintf_P(buffer, sizeof(buffer), formatP, args);
+    Serial.print(buffer);
+    if ((unsigned long long)length >= sizeof(buffer))
+    {
+        Serial.println("[... truncated]");
+    }
+#endif
+}
+
 const char* filesForPart1Backup[] = UPDATE_BACKUP_FILES_ARRAY;
-UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME);
+UpdateHandling updateHandling(UPDATE_STABLEBASEURL, UPDATE_DEVBASEURL, UPDATE_MANIFESTFILENAME, writeLog);
 UpdateHandlingPart1 updateHandlingPart1(UPDATE_PART1BACKUPRESTORE_TIMEOUT_MS, filesForPart1Backup, sizeof(filesForPart1Backup) / sizeof(filesForPart1Backup[0]));
 UpdateHandlingPart2 updateHandlingPart2;
 
