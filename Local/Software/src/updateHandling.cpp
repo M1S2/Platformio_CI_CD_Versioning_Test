@@ -123,6 +123,8 @@ bool UpdateHandling::fetchVersions()
 
     log(PSTR("[Update Handling] Checking for %s update...\n"), (updateStatus.currentUpdateChannel == UPDATE_CHANNEL_STABLE) ? "stable" : "dev");
 
+    log(PSTR("[***Update Handling DEBUG] Free heap before: %u, max. block: %u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+
     WiFiClientSecure clientSecure;
     clientSecure.setSession(p_wifiSession);
     clientSecure.setTrustAnchors(p_wifiCertList);
@@ -132,7 +134,22 @@ bool UpdateHandling::fetchVersions()
     http.setTimeout(10000); // 10 Seconds
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setReuse(false);
-    http.begin(clientSecure, manifestUrl.c_str());
+    if(!http.begin(clientSecure, manifestUrl.c_str()))
+    {
+        log(PSTR("[Update Handling] HTTP error: Unable to connect to %s\n"), manifestUrl.c_str());
+        return false;
+    }
+    log(PSTR("[***Update Handling DEBUG] Free heap after begin: %u, max. block: %u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+    
+    const char* headerKeys[] = 
+    {
+        "Content-Length",
+        "Content-Type",
+        "Location",
+        "Server"
+    };
+    http.collectHeaders(headerKeys, sizeof(headerKeys) / sizeof(headerKeys[0]));
+    
     int httpCode = http.GET();
     if (httpCode <= 0)
     {
@@ -145,10 +162,28 @@ bool UpdateHandling::fetchVersions()
         return false;
     }
 
+    log(PSTR("[***Update Handling DEBUG] Size: %d\n"), http.getSize());
+    log(PSTR("[***Update Handling DEBUG] Free heap after GET: %u, max. block: %u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+
+    log(PSTR("[***Update Handling DEBUG] %d Headers received:\n"), http.headers());
+    for (int i = 0; i < http.headers(); i++)
+    {
+        log(PSTR("[***Update Handling DEBUG] Header %d: %s = %s\n"), i, http.headerName(i).c_str(), http.header(i).c_str());
+    }
+
     // Parse directly from stream to save stack and heap memory
     StaticJsonDocument<1024> doc;
     DeserializationError err = deserializeJson(doc, http.getStream());
+    
+    log(PSTR("[***Update Handling DEBUG] Free heap after JSON: %u, max. block: %u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+
     http.end();
+
+    log(PSTR("[***Update Handling DEBUG] Free heap after end: %u, max. block: %u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
+
+    clientSecure.stop();
+    delay(100);
+    log(PSTR("[***Update Handling DEBUG] after client.stop(): free=%u, max=%u\n"), ESP.getFreeHeap(), ESP.getMaxFreeBlockSize());
 
     if (err)
     {
