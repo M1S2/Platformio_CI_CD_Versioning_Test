@@ -58,26 +58,30 @@ jobs:
         working-directory: Remote/Software
         run: pio run
 
+      - name: Set paths
+        run: |
+          echo "DEV_DIR=dist/firmware/dev" >> $GITHUB_ENV
+
       - name: Prepare files
         run: |
-          mkdir -p dist/firmware/dev
+          mkdir -p "${DEV_DIR}"
 
-          cp Local/Software/.pio/build/esp12e/firmware.bin dist/firmware/dev/local_fw.bin
-          cp Local/Software/.pio/build/esp12e/littlefs.bin dist/firmware/dev/local_fs.bin
-          cp Remote/Software/.pio/build/esp12e/firmware.bin dist/firmware/dev/remote_fw.bin
+          cp Local/Software/.pio/build/esp12e/firmware.bin "${DEV_DIR}/local_fw.bin"
+          cp Local/Software/.pio/build/esp12e/littlefs.bin "${DEV_DIR}/local_fs.bin"
+          cp Remote/Software/.pio/build/esp12e/firmware.bin "${DEV_DIR}/remote_fw.bin"
 
       - name: Generate MD5 checksums
         run: |
-          LOCAL_FW_MD5=$(md5sum dist/firmware/dev/local_fw.bin | awk '{print $1}')
-          LOCAL_FS_MD5=$(md5sum dist/firmware/dev/local_fs.bin | awk '{print $1}')
-          REMOTE_FW_MD5=$(md5sum dist/firmware/dev/remote_fw.bin | awk '{print $1}')
+          LOCAL_FW_MD5=$(md5sum "${DEV_DIR}/local_fw.bin" | awk '{print $1}')
+          LOCAL_FS_MD5=$(md5sum "${DEV_DIR}/local_fs.bin" | awk '{print $1}')
+          REMOTE_FW_MD5=$(md5sum "${DEV_DIR}/remote_fw.bin" | awk '{print $1}')
           echo "LOCAL_FW_MD5=$LOCAL_FW_MD5" >> $GITHUB_ENV
           echo "LOCAL_FS_MD5=$LOCAL_FS_MD5" >> $GITHUB_ENV
           echo "REMOTE_FW_MD5=$REMOTE_FW_MD5" >> $GITHUB_ENV
 
       - name: Create manifest
         run: |
-          cat <<EOF > dist/firmware/dev/manifest.json
+          cat <<EOF > "${DEV_DIR}/manifest.json"
           {
             "version": "${{ steps.version.outputs.version }}",
             "local_fw": "local_fw.bin",
@@ -89,11 +93,29 @@ jobs:
           }
           EOF
 
+      # ------------------------------------------------------------
+      # GitHub Pages
+      # ------------------------------------------------------------
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Update Dev firmware
+        run: |
+          GH_PAGES_DIR=gh-pages/firmware/dev
+          rm -rf "${GH_PAGES_DIR}"
+          mkdir -p "${GH_PAGES_DIR}"
+
+          cp "${DEV_DIR}"/* "${GH_PAGES_DIR}/"
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allow_empty_commit: false
           force_orphan: true
-          publish_dir: ./dist
+          publish_dir: ./gh-pages
           publish_branch: gh-pages

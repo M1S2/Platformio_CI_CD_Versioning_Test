@@ -48,24 +48,40 @@ jobs:
         working-directory: Remote/Software
         run: pio run
 
-      - name: Rename binaries
+      - name: Set paths
         run: |
-          cp Local/Software/.pio/build/esp12e/firmware.bin local_fw_${{ steps.version.outputs.version }}.bin
-          cp Local/Software/.pio/build/esp12e/littlefs.bin local_fs_${{ steps.version.outputs.version }}.bin
-          cp Remote/Software/.pio/build/esp12e/firmware.bin remote_fw_${{ steps.version.outputs.version }}.bin
+          echo "STABLE_DIR=dist/firmware/stable/${{ steps.version.outputs.version }}" >> $GITHUB_ENV
+
+      - name: Prepare Stable files
+        run: |
+          mkdir -p "${STABLE_DIR}"
+
+          cp Local/Software/.pio/build/esp12e/firmware.bin \
+            "${STABLE_DIR}/local_fw_${{ steps.version.outputs.version }}.bin"
+
+          cp Local/Software/.pio/build/esp12e/littlefs.bin \
+            "${STABLE_DIR}/local_fs_${{ steps.version.outputs.version }}.bin"
+
+          cp Remote/Software/.pio/build/esp12e/firmware.bin \
+            "${STABLE_DIR}/remote_fw_${{ steps.version.outputs.version }}.bin"
 
       - name: Generate MD5 checksums
         run: |
-          LOCAL_FW_MD5=$(md5sum local_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
-          LOCAL_FS_MD5=$(md5sum local_fs_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
-          REMOTE_FW_MD5=$(md5sum remote_fw_${{ steps.version.outputs.version }}.bin | awk '{print $1}')
+          LOCAL_FW=${STABLE_DIR}/local_fw_${{ steps.version.outputs.version }}.bin
+          LOCAL_FS=${STABLE_DIR}/local_fs_${{ steps.version.outputs.version }}.bin
+          REMOTE_FW=${STABLE_DIR}/remote_fw_${{ steps.version.outputs.version }}.bin
+
+          LOCAL_FW_MD5=$(md5sum "$LOCAL_FW" | awk '{print $1}')
+          LOCAL_FS_MD5=$(md5sum "$LOCAL_FS" | awk '{print $1}')
+          REMOTE_FW_MD5=$(md5sum "$REMOTE_FW" | awk '{print $1}')
+
           echo "LOCAL_FW_MD5=$LOCAL_FW_MD5" >> $GITHUB_ENV
           echo "LOCAL_FS_MD5=$LOCAL_FS_MD5" >> $GITHUB_ENV
           echo "REMOTE_FW_MD5=$REMOTE_FW_MD5" >> $GITHUB_ENV
 
       - name: Create manifest
         run: |
-          cat <<EOF > manifest.json
+          cat <<EOF > "${STABLE_DIR}/manifest.json"
           {
             "version": "${{ steps.version.outputs.version }}",
             "local_fw": "local_fw_${{ steps.version.outputs.version }}.bin",
@@ -77,13 +93,61 @@ jobs:
           }
           EOF
 
+      # ------------------------------------------------------------
+      # GitHub Release
+      # ------------------------------------------------------------
+
+      - name: Prepare Release files
+        run: |
+          mkdir -p release
+
+          cp "${STABLE_DIR}"/* release/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "Firmware ${{ steps.version.outputs.version }}"
           files: |
-            manifest.json
-            local_fw_${{ steps.version.outputs.version }}.bin
-            local_fs_${{ steps.version.outputs.version }}.bin
-            remote_fw_${{ steps.version.outputs.version }}.bin
+            release/manifest.json
+            release/local_fw_${{ steps.version.outputs.version }}.bin
+            release/local_fs_${{ steps.version.outputs.version }}.bin
+            release/remote_fw_${{ steps.version.outputs.version }}.bin
+
+      # ------------------------------------------------------------
+      # GitHub Pages
+      # ------------------------------------------------------------
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Copy Stable firmware to gh-pages
+        run: |
+          GH_PAGES_DIR=gh-pages/firmware/stable/${{ steps.version.outputs.version }}
+          mkdir -p "$GH_PAGES_DIR"
+          cp "${STABLE_DIR}"/* "$GH_PAGES_DIR"/
+
+      - name: Create latest Stable manifest
+        run: |
+          cat <<EOF > gh-pages/firmware/stable/manifest.json
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "local_fw": "${{ steps.version.outputs.version }}/local_fw_${{ steps.version.outputs.version }}.bin",
+            "local_fs": "${{ steps.version.outputs.version }}/local_fs_${{ steps.version.outputs.version }}.bin",
+            "local_fw_md5": "${LOCAL_FW_MD5}",
+            "local_fs_md5": "${LOCAL_FS_MD5}",
+            "remote_fw": "${{ steps.version.outputs.version }}/remote_fw_${{ steps.version.outputs.version }}.bin",
+            "remote_fw_md5": "${REMOTE_FW_MD5}"
+          }
+          EOF
+
+      - name: Deploy Stable firmware to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          force_orphan: true
+          publish_dir: ./gh-pages
+          publish_branch: gh-pages

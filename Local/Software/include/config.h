@@ -15,7 +15,8 @@
 /**********************************************************************/
 /* UPDATE HANDLING */
 
-#define UPDATE_STABLEBASEURL                    "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/"
+//#define UPDATE_STABLEBASEURL                    "https://github.com/M1S2/Platformio_CI_CD_Versioning_Test/releases/latest/download/"
+#define UPDATE_STABLEBASEURL                    "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/stable/"
 #define UPDATE_DEVBASEURL                       "https://M1S2.github.io/Platformio_CI_CD_Versioning_Test/firmware/dev/"
 #define UPDATE_MANIFESTFILENAME                 "manifest.json"
 
