@@ -5,33 +5,6 @@
 #include <LittleFS.h>
 #include "updateHandling.h"
 
-/*
-Stable Manifest Format:
-{
-  "version": "3.0.0",
-  "local_fw": "local_fw_3.0.0.bin",
-  "local_fs": "local_fs_3.0.0.bin",
-  "local_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "local_fs_md5": "0b37d70272041137295d7dc4ca508698",
-  "remote_fw": "remote_fw_3.0.0.bin",
-  "remote_fw_md5": "50bff09cec367445d75cee900608b86d"
-}
-
-Dev Manifest Format:
-{
-  "version": "dev-SW_v3.0.0-p3-9853261",
-  "local_fw": "local_fw.bin",
-  "local_fs": "local_fs.bin",
-  "local_fw_md5": "4375b4f6083364c9dcd557f80cadd149",
-  "local_fs_md5": "0b37d70272041137295d7dc4ca508698",
-  "remote_fw": "remote_fw.bin",
-  "remote_fw_md5": "50bff09cec367445d75cee900608b86d"
-}
-*/
-
-bool requestNewVersionCheck = false;
-bool requestUpdate = false;
-
 UpdateHandling::UpdateHandling(const char* stableBaseUrl, const char* devBaseUrl, const char* manifestName, log_function_t logFunction) :
     logFunction(logFunction), stableBaseUrl(stableBaseUrl), devBaseUrl(devBaseUrl), manifestName(manifestName)
 {
