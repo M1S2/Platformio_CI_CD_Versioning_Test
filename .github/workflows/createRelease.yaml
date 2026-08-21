@@ -144,6 +144,30 @@ jobs:
           }
           EOF
 
+      - name: Update Stable versions JSON
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          stable = Path("gh-pages/firmware/stable")
+
+          versions = [
+              p.name
+              for p in stable.iterdir()
+              if p.is_dir()
+          ]
+
+          versions.sort(
+              key=lambda v: tuple(map(int, v.split("."))),
+              reverse=True
+          )
+
+          (stable / "versions.json").write_text(
+              json.dumps({"versions": versions}, indent=2) + "\n"
+          )
+          PY
+
       - name: Deploy Stable firmware to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
