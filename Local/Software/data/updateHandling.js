@@ -439,6 +439,7 @@ function displayUpdateStatus(updateStatus)
 	const updateStatusElement = document.querySelector('.update-status');
 	const updateChannelSelect = document.getElementById('update_channel_select');
 	const progressBar = document.querySelector('.update-progress');
+	const progressBarPercentage = document.querySelector('.update-progress-percent');
 
 	const btnCheckUpdate = document.getElementById('btn-check-update');
 	const loaderBtnCheckUpdate = document.getElementById('loader-btn-check-update');
@@ -475,6 +476,7 @@ function displayUpdateStatus(updateStatus)
 				case UpdateSteps.WAIT:
 					statusText = updateStepText + ` for ${componentText}`;
 					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
+					progressBarPercentage.textContent = '';
 					break;
 				case UpdateSteps.PREPARE:
 				case UpdateSteps.FW:
@@ -487,6 +489,7 @@ function displayUpdateStatus(updateStatus)
 				case UpdateSteps.RESTART:
 					statusText = updateStepText + ` of ${componentText}`;
 					progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
+					progressBarPercentage.textContent = '';
 					break;
 				default:
 					statusText = 'Updating';
@@ -497,6 +500,7 @@ function displayUpdateStatus(updateStatus)
 		case UpdateStates.RESTARTING:
 			statusText = 'Restarting device';
 			progressBar.removeAttribute("value"); 	// set the progressbar to indeterminate
+			progressBarPercentage.textContent = '';
 			statusIcon = 'restart_alt';
 			isUpdating = true;
 			break;
@@ -545,6 +549,7 @@ function displayUpdateStatus(updateStatus)
 	if (progressBar && typeof updateStatus.updateProgress === 'number' && updateStatus.updateStep !== UpdateSteps.WAIT)
 	{
 		progressBar.value = updateStatus.updateProgress;
+		progressBarPercentage.textContent = `${Math.round(updateStatus.updateProgress)} %`;
 	}
 }
 
