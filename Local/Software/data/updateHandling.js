@@ -1,40 +1,54 @@
-const UpdateChannels =
-{
-	STABLE: 0,
-	DEV: 1
-};
-
-const UpdateStates =
-{
-	IDLE: 0,
-	CHECKING: 1,
-	UPDATING: 2,
-	RESTARTING: 3,
-	ERROR: 4
-};
-
-const UpdateSteps =
-{
-    NONE: 0,
-    PREPARE: 1,
-    WAIT: 2,
-	FW: 3,
-	BACKUP: 4,
-	FS: 5,
-	RESTORE: 6,
-	RESTART: 7,
-	FINISHED: 8
-};
-
-let lastUpdateState = UpdateStates.IDLE;
-let lastUpdateStep = UpdateSteps.NONE;
-let currentlyFetchingUpdateInfo = false;
-
-const BACKUP_DB_NAME = 'test-update-backup';
-
+/**********************************************************************/
+/* Enumerations														  */
 /**********************************************************************/
 
-// IndexedDB helpers for Backup/Restore
+// Different update channels that can be used for fetching updates.
+const UpdateChannels =
+{
+	STABLE: 0,		// Stable update channel, intended for production releases. Updates fetched from this channel are expected to be stable and reliable.
+	DEV: 1			// Development update channel, intended for testing and development purposes.
+};
+
+// Different states of the update handling process. These states represent the current status of the update handling system, allowing for tracking and managing the update process.
+const UpdateStates =
+{
+	IDLE: 0,		// The update handling system is idle and not currently performing any update-related tasks.
+	CHECKING: 1,	// The update handling system is checking for available updates, typically by fetching version information from the specified update channels.
+	UPDATING: 2,	// The update handling system is currently updating components.
+	RESTARTING: 3,	// The update handling system is restarting the device.
+	ERROR: 4		// The update handling system has encountered an error.
+};
+
+// Different steps of the update process. These steps represent the various stages of the update handling system, allowing for tracking and managing the progress of updates.
+const UpdateSteps =
+{
+    NONE: 0,		// No update step is currently being performed.
+    PREPARE: 1,		// The update handling system is preparing for the update process.
+    WAIT: 2,		// The update handling system is waiting for a specific condition or event before proceeding with the update process.
+	FW: 3,			// The update handling system is performing a firmware update.
+	BACKUP: 4,		// The update handling system is backing up the current state.
+	FS: 5,			// The update handling system is performing a filesystem update.
+	RESTORE: 6,		// The update handling system is restoring the backed-up state.
+	RESTART: 7,		// The update handling system is restarting the device.
+	FINISHED: 8		// The update handling system has finished the update process.
+};
+
+/**********************************************************************/
+/* State variables													  */
+/**********************************************************************/
+
+let lastUpdateState = UpdateStates.IDLE;		// State variables to track the last known update state.
+let lastUpdateStep = UpdateSteps.NONE;			// State variable to track the last known update step.
+let currentlyFetchingUpdateInfo = false;		// Flag to indicate whether the system is currently fetching update information.
+
+/**********************************************************************/
+/* IndexedDB helpers for Backup/Restore								  */
+/**********************************************************************/
+
+const BACKUP_DB_NAME = 'test-update-backup';	// Name of the IndexedDB database used for storing backup snapshots during the update process.
+
+// Open the IndexedDB database for storing backup snapshots.
+// If the database does not exist, it will be created with the necessary object store and index. 
 async function updateBackup_OpenDB()
 {
 	return new Promise((res, rej) =>
@@ -54,6 +68,7 @@ async function updateBackup_OpenDB()
 	});
 }
 
+// Delete the backup IndexedDB database
 async function updateBackup_DeleteDB()
 {
 	return new Promise((res, rej) =>
@@ -64,6 +79,7 @@ async function updateBackup_DeleteDB()
 	});
 }
 
+// Save a snapshot to the IndexedDB database
 async function updateBackup_SaveSnapshot(id, files, meta)
 {
 	const db = await updateBackup_OpenDB();
@@ -77,6 +93,7 @@ async function updateBackup_SaveSnapshot(id, files, meta)
 	});
 }
 
+// List all available snapshots in the IndexedDB
 async function updateBackup_ListSnapshots()
 {
 	const db = await updateBackup_OpenDB();
@@ -90,6 +107,7 @@ async function updateBackup_ListSnapshots()
 	});
 }
 
+// Get the snapshot with the newest date
 async function updateBackup_GetLatestSnapshot()
 {
 	const snaps = await updateBackup_ListSnapshots();
@@ -98,6 +116,7 @@ async function updateBackup_GetLatestSnapshot()
 	return snaps[0];
 }
 
+// Delete one specific snapshot
 async function updateBackup_DeleteSnapshot(id)
 {
 	const db = await updateBackup_OpenDB();
@@ -202,7 +221,10 @@ async function updatePerformRestore()
 }
 
 /**********************************************************************/
+/* Enumerations to String/Icon helpers								  */
+/**********************************************************************/
 
+// Get a string corresponding to the UpdateStep
 function updateStepToString(step)
 {
     switch (step)
@@ -220,6 +242,7 @@ function updateStepToString(step)
     }
 }
 
+// Get a string used to get an icon for the UpdateStep
 function getUpdateStepIcon(step)
 {
     switch(step)
@@ -237,7 +260,10 @@ function getUpdateStepIcon(step)
 }
 
 /**********************************************************************/
+/* Body loaded														  */
+/**********************************************************************/
 
+// This function is called when the HTML page is loaded
 function bodyLoaded()
 {
 	currentlyFetchingUpdateInfo = false;
@@ -247,15 +273,19 @@ function bodyLoaded()
 }
 
 /**********************************************************************/
+/* Polling functions												  */
+/**********************************************************************/
 
+// Poll the update status from the backend.
+// This function calls itself after a period of time when cyclic is true.
 async function pollUpdateStatus(cyclic = true)
 {
 	try
 	{
-		const statusRes = await fetch('/update/status');
-		if (statusRes.ok)
+		const statusResponse = await fetch('/update/status');
+		if (statusResponse.ok)
 		{
-			const updateStatus = await statusRes.json();
+			const updateStatus = await statusResponse.json();
 			displayUpdateStatus(updateStatus);
 
 			// Reload the update infos to get the new versions:
@@ -311,14 +341,15 @@ async function pollUpdateStatus(cyclic = true)
 
 /**********************************************************************/
 
+// Poll the update info from the backend.
 async function pollUpdateInfo()
 {
 	try
 	{
-		const infoRes = await fetch('/update/info');
-		if (infoRes.ok)
+		const infoResponse = await fetch('/update/info');
+		if (infoResponse.ok)
 		{
-			const updateInfo = await infoRes.json();
+			const updateInfo = await infoResponse.json();
 			displayUpdateInfos(updateInfo);
 		}
 	}
@@ -326,7 +357,11 @@ async function pollUpdateInfo()
 }
 
 /**********************************************************************/
+/* Display functions 												  */
+/**********************************************************************/
 
+// Display the update info on the HTML frontend.
+// The needed elements are generated dynamically.
 function displayUpdateInfos(updateInfo)
 {
 	const container = document.getElementById('update-components-container');
@@ -398,11 +433,12 @@ function displayUpdateInfos(updateInfo)
 
 /**********************************************************************/
 
+// Display the update status on the HTML frontend.
 function displayUpdateStatus(updateStatus)
 {
 	const updateStatusElement = document.querySelector('.update-status');
 	const updateChannelSelect = document.getElementById('update_channel_select');
-	const progressBar = document.getElementById('update_progress');
+	const progressBar = document.querySelector('.update-progress');
 
 	const btnCheckUpdate = document.getElementById('btn-check-update');
 	const loaderBtnCheckUpdate = document.getElementById('loader-btn-check-update');
@@ -514,6 +550,7 @@ function displayUpdateStatus(updateStatus)
 
 /**********************************************************************/
 
+// Display a list with all (remaining) update tasks
 function displayUpdateTaskList(updateTaskList)
 {
 	const container = document.getElementById("update_task_list");
@@ -572,7 +609,10 @@ function displayUpdateTaskList(updateTaskList)
 }
 
 /**********************************************************************/
+/* UI Element actions 												  */
+/**********************************************************************/
 
+// Change the update channel
 async function setUpdateChannel(channel)
 {
 	await fetch(`/update/set_channel`,
@@ -589,6 +629,7 @@ async function setUpdateChannel(channel)
 
 /**********************************************************************/
 
+// Trigger a new check for updates
 async function checkUpdate()
 {
 	await fetch('/update/check', { method: 'POST' });
@@ -597,6 +638,7 @@ async function checkUpdate()
 
 /**********************************************************************/
 
+// Start the update for a specific component
 async function startUpdate(componentName, componentInstanceIndex)
 {
 	try

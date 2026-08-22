@@ -72,7 +72,7 @@ void wifiHandling_initWebserverFiles()
         #endif
     });
     server.addHandler(&events);
-    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+    server.serveStatic("/", LittleFS, "/").setDefaultFile("updateHandling.html");
     server.onNotFound([](AsyncWebServerRequest *request)
     {
         request->send(404, "text/plain", "Not found");

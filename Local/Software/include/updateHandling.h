@@ -9,7 +9,7 @@
 /// @brief Maximum size of the update queue (how many update tasks can be queued at once).
 #define UPDATE_QUEUE_SIZE 15
 
-/// @brief Different update channels that can be used for fetching updates. The stable channel is intended for production releases, while the development channel is for testing and development purposes.
+/// @brief Different update channels that can be used for fetching updates.
 enum UpdateChannels
 {
     UPDATE_CHANNEL_STABLE,  ///< Stable update channel, intended for production releases. Updates fetched from this channel are expected to be stable and reliable.
