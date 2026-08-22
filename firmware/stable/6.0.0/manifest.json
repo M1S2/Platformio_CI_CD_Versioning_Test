@@ -1,0 +1,9 @@
+{
+  "version": "6.0.0",
+  "local_fw": "local_fw_6.0.0.bin",
+  "local_fs": "local_fs_6.0.0.bin",
+  "local_fw_md5": "57d9b6683c79ddab41f0e1deb74f5758",
+  "local_fs_md5": "20d9033f06010f7ad01968b4bf186b36",
+  "remote_fw": "remote_fw_6.0.0.bin",
+  "remote_fw_md5": "aa6cfe2fbf180d534c229ee3387d7380"
+}

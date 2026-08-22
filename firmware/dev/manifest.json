@@ -1,0 +1,9 @@
+{
+  "version": "dev-SW_v6.1.0-p3-bdcc6a7",
+  "local_fw": "local_fw.bin",
+  "local_fs": "local_fs.bin",
+  "local_fw_md5": "59d4b2687d993cad08f5c25e30f8712e",
+  "local_fs_md5": "581b4d9714174ae182f27b678454f70b",
+  "remote_fw": "remote_fw.bin",
+  "remote_fw_md5": "89ab9350dbce009a9af5fd5171bc466d"
+}
