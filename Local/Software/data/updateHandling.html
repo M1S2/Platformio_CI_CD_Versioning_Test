@@ -1,93 +1,70 @@
-<!DOCTYPE HTML>
-<html>
-	<head>
-		<title>Test for Versioning</title>
-		<meta content="text/html; charset=UTF-8" http-equiv="content-type">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<!-- https://fonts.google.com/icons -->
-		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />		
-		<link rel="stylesheet" type="text/css" href="style.css">
-		<link rel="stylesheet" type="text/css" href="updateHandling.css">
-	</head>
-	<body onload="bodyLoaded()">
-		<div id="Heading">
-			<div>Test for Versioning</div>
-			<div id="SubHeading">Index Page</div>
-		</div>
-		
-		<br>
-
-		<div class="update-container">
-			<!-- Common Status/Control Card -->
-			<div class="update-common-card">
-				<h2>Update Übersicht</h2>
-				<div class="update-card-content">
-					<div class="update-info-column">
-						<div>
-							<div class="update-status">-</div>
-							<div class="update-progress-wrapper">
-								<progress class="update-progress" max="100"></progress>
-								<span class="update-progress-percent">0 %</span>
-							</div>
-						</div>
-
-						<br>
-
-						<div class="update-channel">
-							<label for="update_channel_select">Update-Kanal:</label>
-							<select id="update_channel_select" onchange="setUpdateChannel(this.value)">
-								<option value="stable">Stable (Produktion)</option>
-								<option value="dev">Dev (Entwicklung)</option>
-							</select>
-							<div class="update-loader-button-wrapper" style="margin-left: 20px;">
-								<span class="update-loader" id="loader-btn-check-update" style="display: none;"></span>
-								<button class="update-icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
-							</div>
-						</div>
+<div class="update-container">
+	<!-- Common Status/Control Card -->
+	<div class="update-common-card">
+		<h2>Update Übersicht</h2>
+		<div class="update-card-content">
+			<div class="update-info-column">
+				<div>
+					<div class="update-status">-</div>
+					<div class="update-progress-wrapper">
+						<progress class="update-progress" max="100"></progress>
+						<span class="update-progress-percent">0 %</span>
 					</div>
+				</div>
 
-					<div class="update-task-queue-section">
-						<h3>Ausstehende Update Tasks</h3>
-						<div id="update_task_list">
-							<div class="update-task-empty"></div>
-						</div>
+				<br>
+
+				<div class="update-channel">
+					<label for="update_channel_select">Update-Kanal:</label>
+					<select id="update_channel_select" onchange="setUpdateChannel(this.value)">
+						<option value="stable">Stable (Produktion)</option>
+						<option value="dev">Dev (Entwicklung)</option>
+					</select>
+					<div class="update-loader-button-wrapper" style="margin-left: 20px;">
+						<span class="update-loader" id="loader-btn-check-update" style="display: none;"></span>
+						<button class="update-icon-button" id="btn-check-update" onclick="checkUpdate()" title="Check for new updates..."><i class="material-symbols-outlined">search</i></button>
 					</div>
 				</div>
 			</div>
 
-			<!-- Components Container -->
-			<div class="update-components-container" id="update-components-container">
-				<!-- Components will be generated from template -->
+			<div class="update-task-queue-section">
+				<h3>Ausstehende Update Tasks</h3>
+				<div id="update_task_list">
+					<div class="update-task-empty"></div>
+				</div>
 			</div>
 		</div>
+	</div>
 
-		<!-- Component Column Template -->
-		<template id="update-component-column-template">
-			<div class="update-component-column">
-				<h3 class="update-column-title"></h3>
-				<div class="update-component-instance-card-container">
-					<!-- Individual version cards will be added here -->
-				</div>
+	<!-- Components Container -->
+	<div class="update-components-container" id="update-components-container">
+		<!-- Components will be generated from template -->
+	</div>
+</div>
+
+<!-- Component Column Template -->
+<template id="update-component-column-template">
+	<div class="update-component-column">
+		<h3 class="update-column-title"></h3>
+		<div class="update-component-instance-card-container">
+			<!-- Individual version cards will be added here -->
+		</div>
+	</div>
+</template>
+
+<!-- Component Instance Card Template -->
+<template id="update-component-instance-card-template">
+	<div class="update-component-instance-card">
+		<div class="update-version-grid">
+			<span class="update-version-label">Aktuell:</span> <span id="update-component-instance-current-version">-</span>
+			<span class="update-version-label">Neu:</span> <span id="update-component-instance-available-version">-</span>
+		</div>
+
+		<div class="update-card-actions">
+			<div class="update-loader-button-wrapper">
+				<span class="update-loader" id="loader-btn-update-start" style="display: none;"></span>
+				<button type="button" id="btn-update-start" class="update-icon-button" title="Update component"><i class="material-symbols-outlined">upload</i></button>
 			</div>
-		</template>
-
-		<!-- Component Instance Card Template -->
-		<template id="update-component-instance-card-template">
-			<div class="update-component-instance-card">
-				<div class="update-version-grid">
-					<span class="update-version-label">Aktuell:</span> <span id="update-component-instance-current-version">-</span>
-					<span class="update-version-label">Neu:</span> <span id="update-component-instance-available-version">-</span>
-				</div>
-
-				<div class="update-card-actions">
-					<div class="update-loader-button-wrapper">
-						<span class="update-loader" id="loader-btn-update-start" style="display: none;"></span>
-						<button type="button" id="btn-update-start" class="update-icon-button" title="Update component"><i class="material-symbols-outlined">upload</i></button>
-					</div>
-				</div>
-			</div>
-		</template>
-
-	</body>
-	<script src="updateHandling.js"></script>
-</html>
+		</div>
+	</div>
+</template>

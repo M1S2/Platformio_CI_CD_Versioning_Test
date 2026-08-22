@@ -42,6 +42,24 @@ let lastUpdateStep = UpdateSteps.NONE;			// State variable to track the last kno
 let currentlyFetchingUpdateInfo = false;		// Flag to indicate whether the system is currently fetching update information.
 
 /**********************************************************************/
+/* Initialize														  */
+/**********************************************************************/
+
+// This function must be called when the HTML is embedded into the main HTML.
+// Pass the name of the element to this function, into which the updateHandling.html should be embedded.
+async function initUpdateHandling(parentElementId)
+{
+	const response = await fetch('updateHandling.html');
+    const html = await response.text();
+    document.getElementById(parentElementId).innerHTML = html;
+
+	currentlyFetchingUpdateInfo = false;
+	pollUpdateInfo();
+	pollUpdateStatus(true);
+	checkUpdate();
+}
+
+/**********************************************************************/
 /* IndexedDB helpers for Backup/Restore								  */
 /**********************************************************************/
 
@@ -257,19 +275,6 @@ function getUpdateStepIcon(step)
 		case UpdateSteps.FINISHED: return "check_circle";
         default: return "circle";
     }
-}
-
-/**********************************************************************/
-/* Body loaded														  */
-/**********************************************************************/
-
-// This function is called when the HTML page is loaded
-function bodyLoaded()
-{
-	currentlyFetchingUpdateInfo = false;
-	pollUpdateInfo();
-	pollUpdateStatus(true);
-	checkUpdate();
 }
 
 /**********************************************************************/
